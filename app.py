@@ -343,16 +343,22 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 
 @media(max-width:700px){
   .header,.stats,.filters,.content,.links-section{padding-left:12px;padding-right:12px}
-  .jobs-grid{grid-template-columns:1fr}
+  .header{flex-direction:column;align-items:flex-start;gap:10px}
+  .scan-btn{width:100%}
   .header-left h1{font-size:22px}
-  .filters{flex-direction:column;align-items:flex-start;gap:8px;overflow-x:hidden}
-  .filters>div{margin-left:0!important;overflow-x:auto;max-width:100%;padding-bottom:2px}
-  .search-box{width:100%;margin-left:0}
-  .stat-card{padding:10px 14px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .stat-card{padding:10px 14px;min-width:unset}
   .stat-number{font-size:20px}
+  .jobs-grid{grid-template-columns:1fr}
+  .filters{flex-direction:column;align-items:flex-start;gap:6px;overflow-x:hidden}
+  .filters>div{margin-left:0!important;overflow-x:auto;max-width:100%;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+  .filter-label{white-space:nowrap}
+  .search-box{width:100%;margin-left:0;box-sizing:border-box}
   .list-meta,.list-actions{display:none}
   .full-meta{gap:8px}
-  .modal{max-height:94vh}
+  .modal{max-height:96vh;margin:0;border-radius:12px 12px 0 0;position:fixed;bottom:0;left:0;right:0;width:100%}
+  .modal-overlay{align-items:flex-end;padding:0}
+  .links-grid{grid-template-columns:1fr}
 }
 </style>
 </head>
