@@ -47,11 +47,19 @@ ROLES_HEBREW = [
 LOCATIONS   = ["Tel Aviv", "Ramat Gan", "Givatayim", "Petah Tikva", "Herzliya", "Bnei Brak"]
 COMPANY_BLACKLIST = ["experis"]   # agencies / irrelevant companies to skip
 MAX_EXPERIENCE = 2
-_DATA_DIR   = os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
-CACHE_FILE  = os.path.join(_DATA_DIR, "datahunt_cache.json")
-OUTPUT_FILE = os.path.join(_DATA_DIR, "datahunt_results.html")
-JOBS_FILE   = os.path.join(_DATA_DIR, "jobs_data.json")
+_DATA_DIR      = os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+CACHE_FILE     = os.path.join(_DATA_DIR, "datahunt_cache.json")
+OUTPUT_FILE    = os.path.join(_DATA_DIR, "datahunt_results.html")
+JOBS_FILE      = os.path.join(_DATA_DIR, "jobs_data.json")
+PROGRESS_FILE  = os.path.join(_DATA_DIR, "scan_progress.json")
 os.makedirs(_DATA_DIR, exist_ok=True)
+
+def _write_progress(pct, stage, found=0):
+    try:
+        with open(PROGRESS_FILE, "w", encoding="utf-8") as _f:
+            json.dump({"pct": pct, "stage": stage, "found": found}, _f)
+    except Exception:
+        pass
 
 HEADERS = {
     "User-Agent": (
@@ -865,30 +873,37 @@ def main():
 
     all_jobs = []
 
+    _write_progress(5, "Starting scan...", 0)
     print("Scraping LinkedIn...")
     li = scrape_linkedin()
     all_jobs.extend(li)
     print(f"   + {len(li)} jobs")
 
+    _write_progress(30, f"LinkedIn done ({len(li)} found) — scraping Jobmaster...", len(all_jobs))
     print("Scraping Jobmaster...")
     jm = scrape_jobmaster()
     all_jobs.extend(jm)
     print(f"   + {len(jm)} jobs")
 
+    _write_progress(55, f"Jobmaster done ({len(jm)} found) — scraping Drushim...", len(all_jobs))
     print("Scraping Drushim...")
     dr = scrape_drushim()
     all_jobs.extend(dr)
     print(f"   + {len(dr)} jobs")
 
+    _write_progress(75, f"Drushim done ({len(dr)} found) — scraping AllJobs...", len(all_jobs))
     print("Scraping AllJobs...")
     aj = scrape_alljobs()
     all_jobs.extend(aj)
     print(f"   + {len(aj)} jobs")
 
+    _write_progress(88, f"AllJobs done — scraping Glassdoor...", len(all_jobs))
     print("Scraping Glassdoor...")
     gd = scrape_glassdoor()
     all_jobs.extend(gd)
     print(f"   + {len(gd)} jobs")
+
+    _write_progress(95, "Deduplicating and saving...", len(all_jobs))
 
     print(f"\nTotal new jobs (before dedup): {len(all_jobs)}")
 
@@ -941,6 +956,7 @@ def main():
         json.dump(existing, f, ensure_ascii=False, indent=2)
 
     generate_html(all_jobs, search_links)
+    _write_progress(100, f"Done! {added} new jobs added.", len(existing))
     print(f"\nDone! Open {OUTPUT_FILE} or run app.py for the web dashboard.")
 
 
