@@ -39,9 +39,30 @@ PREVIEW_HEADERS = {
 def load_jobs():
     try:
         with open(JOBS_FILE, encoding="utf-8") as f:
-            return json.load(f)
+            raw = json.load(f)
     except FileNotFoundError:
         return []
+    # Deduplicate by normalised title+company — keep the most-recently scraped copy
+    seen = {}
+    for job in raw:
+        key = (
+            re.sub(r"\s+", " ", (job.get("title") or "").lower().strip()),
+            re.sub(r"\s+", " ", (job.get("company") or "").lower().strip()),
+        )
+        existing = seen.get(key)
+        if existing is None:
+            seen[key] = job
+        else:
+            # prefer whichever has a later scraped_at
+            def _ts(j):
+                s = j.get("scraped_at")
+                try:
+                    return datetime.fromisoformat(s) if s else datetime.min
+                except Exception:
+                    return datetime.min
+            if _ts(job) > _ts(existing):
+                seen[key] = job
+    return list(seen.values())
 
 
 def load_cache():
@@ -320,10 +341,18 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 .toast{position:fixed;bottom:22px;right:22px;background:#1e1e30;border:1px solid #667eea;color:#e0e0e0;padding:11px 18px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999}
 .toast.show{opacity:1}
 
-@media(max-width:600px){
-  .header,.stats,.filters,.content,.links-section{padding-left:14px;padding-right:14px}
+@media(max-width:700px){
+  .header,.stats,.filters,.content,.links-section{padding-left:12px;padding-right:12px}
   .jobs-grid{grid-template-columns:1fr}
   .header-left h1{font-size:22px}
+  .filters{flex-direction:column;align-items:flex-start;gap:8px;overflow-x:hidden}
+  .filters>div{margin-left:0!important;overflow-x:auto;max-width:100%;padding-bottom:2px}
+  .search-box{width:100%;margin-left:0}
+  .stat-card{padding:10px 14px}
+  .stat-number{font-size:20px}
+  .list-meta,.list-actions{display:none}
+  .full-meta{gap:8px}
+  .modal{max-height:94vh}
 }
 </style>
 </head>
