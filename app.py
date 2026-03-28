@@ -293,7 +293,7 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 .card-desc{font-size:13px;line-height:1.7;color:#c0c0c0;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;margin-bottom:12px}
 .card-loading{display:flex;align-items:center;gap:8px;color:#888;font-size:13px;padding:8px 0}
 .card-loading .spinner{display:block;border-color:#444;border-top-color:#a78bfa;width:16px;height:16px}
-.expand-actions{display:flex;gap:8px;flex-wrap:wrap}
+.expand-actions{display:flex;gap:8px;flex-wrap:wrap;padding-top:4px}
 
 /* badges */
 .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.2px}
@@ -309,9 +309,8 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 .rel-low{background:#2a1a1a;color:#f87171;border:1px solid #7f1d1d}
 
 /* apply button */
-.apply-link{display:inline-flex;align-items:center;gap:4px;color:#a78bfa;font-size:12px;font-weight:600;text-decoration:none;padding:7px 16px;border-radius:6px;border:1px solid #3a3a58;background:#2a2a40;transition:all .15s}
-.apply-link:hover{background:#3a3a58;border-color:#667eea;color:#fff}
-.apply-link-sm{font-size:11px;padding:5px 10px}
+.apply-link{display:inline-flex;align-items:center;justify-content:center;gap:6px;color:#fff;font-size:14px;font-weight:700;text-decoration:none;padding:11px 22px;border-radius:8px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);transition:all .18s;width:100%}
+.apply-link:hover{background:linear-gradient(135deg,#7c8fef,#8a5db5);transform:translateY(-1px);box-shadow:0 4px 16px rgba(102,126,234,.4)}
 
 /* empty */
 .empty{text-align:center;padding:50px 20px;color:#555}
@@ -444,7 +443,7 @@ function srcClass(s){
   const m={linkedin:'src-linkedin',jobmaster:'src-jobmaster',drushim:'src-drushim',alljobs:'src-alljobs',glassdoor:'src-glassdoor'};
   return m[(s||'').toLowerCase()]||'src-unknown';
 }
-function relClass(s){return s>=40?'rel-high':s>=25?'rel-med':'rel-low'}
+function relClass(s){return s>=70?'rel-high':s>=45?'rel-med':'rel-low'}
 function relLabel(s){return s+'% match'}
 
 function fmtDate(iso){

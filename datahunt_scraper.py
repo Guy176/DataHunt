@@ -184,53 +184,64 @@ def is_data_relevant(title):
 # ── Resume-based relevance scoring ───────────────────────────────────────────
 # Tuned to Guy Amos: Power BI, Tableau, SQL, Python, BI Developer/Analyst roles
 
-_SCORE_KEYWORDS = [
-    # (keyword, points)  — checked against lower-cased title + experience_required
-    ("power bi",          22), ("powerbi",            22),
-    ("tableau",           18),
-    ("bi developer",      20), ("bi analyst",         20),
-    ("sql",               12),
-    ("python",            10),
-    ("ssis",               8),
-    ("analytics engineer", 14),
-    ("data analyst",      14),
-    ("reporting analyst", 12),
-    ("business analyst",  10),
-    ("business intelligence", 10),
-    ("data engineer",      8),
-    ("data scientist",     5),
-    ("excel",              5),
-    ("etl",                6),
-    ("dwh",                6), ("data warehouse",     6),
-    ("dbt",                7),
-    ("looker",             8),
-    ("ai analyst",         8),
-]
-
-_EXP_SCORE = {
-    "entry level": 15,
-    "0-1": 15, "0-2": 15,
-    "1-2": 12, "1+ yrs": 10,
-    "2-3": 6,  "2+ yrs": 6,
-}
-
-
 def score_job(job):
-    """Return 0-100 relevance score for this job against Guy's resume."""
-    haystack = (job.get("title", "") + " " + job.get("experience_required", "")).lower()
+    """Return 0-100 relevance score for this job against Guy's resume.
 
-    pts = 0
-    for kw, weight in _SCORE_KEYWORDS:
-        if kw in haystack:
-            pts += weight
+    Three components:
+      Role fit   (0-55)  — how well the job title matches Guy's target roles
+      Tech bonus (0-30)  — Power BI / Tableau / SQL mentioned in title or exp
+      Exp fit    (0-15)  — how well the experience level matches
+    """
+    title    = job.get("title", "").lower()
+    exp_lbl  = job.get("experience_required", "").lower()
+    haystack = title + " " + exp_lbl
 
-    exp = job.get("experience_required", "").lower()
-    for key, bonus in _EXP_SCORE.items():
-        if key in exp:
-            pts += bonus
-            break
+    # ── Role fit (mutually exclusive, highest match wins) ─────────────────────
+    role_pts = 0
+    if any(t in title for t in ["bi developer", "bi analyst",
+                                  "business intelligence developer",
+                                  "business intelligence analyst"]):
+        role_pts = 55
+    elif "power bi" in title or "powerbi" in title:
+        role_pts = 52
+    elif "analytics engineer" in title:
+        role_pts = 48
+    elif "data analyst" in title or "analyst data" in title:
+        role_pts = 45
+    elif "reporting analyst" in title or "report analyst" in title:
+        role_pts = 40
+    elif "ai analyst" in title:
+        role_pts = 38
+    elif "business analyst" in title:
+        role_pts = 28
+    elif "data engineer" in title:
+        role_pts = 22
+    elif "data scientist" in title:
+        role_pts = 15
+    elif "analyst" in title:
+        role_pts = 25
 
-    return min(pts, 100)
+    # ── Tech bonus (capped at 30) ─────────────────────────────────────────────
+    tech = 0
+    if "power bi" in haystack or "powerbi" in haystack: tech += 20
+    if "tableau"  in haystack:                           tech += 15
+    if "sql"      in haystack:                           tech += 8
+    if "python"   in haystack:                           tech += 6
+    if any(t in haystack for t in ["ssis", "etl", "dwh", "data warehouse"]): tech += 5
+    if any(t in haystack for t in ["dbt", "looker"]):   tech += 5
+    tech = min(tech, 30)
+
+    # ── Experience fit ────────────────────────────────────────────────────────
+    if any(k in exp_lbl for k in ["entry level", "0-1", "0-2"]):
+        exp_pts = 15
+    elif any(k in exp_lbl for k in ["1-2", "1+ yrs", "1 yr"]):
+        exp_pts = 12
+    elif any(k in exp_lbl for k in ["2 yrs", "2-3", "2+ yrs"]):
+        exp_pts = 8
+    else:
+        exp_pts = 4   # unknown exp
+
+    return min(role_pts + tech + exp_pts, 100)
 
 
 # ── Cross-site deduplication ─────────────────────────────────────────────────
