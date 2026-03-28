@@ -107,8 +107,9 @@ def extract_skills_from_text(text):
     return found
 
 
-# Override ROLES and USER_SKILLS from user config if present
+# Override ROLES, USER_SKILLS, and SENIORITY from user config if present
 _USER_SKILLS = []  # populated from config if resume was uploaded
+_SENIORITY   = "junior"  # junior | mid | senior | any
 try:
     with open(CONFIG_FILE, encoding="utf-8") as _cf:
         _cfg = json.load(_cf)
@@ -122,8 +123,15 @@ try:
         # Extract on-the-fly if skills weren't pre-extracted
         _USER_SKILLS = extract_skills_from_text(_cfg["resume_text"])
         print(f"Extracted {len(_USER_SKILLS)} skills from resume text: {_USER_SKILLS[:10]}...")
+    if _cfg.get("seniority"):
+        _SENIORITY = _cfg["seniority"]
+        print(f"Seniority set to: {_SENIORITY}")
 except Exception:
     pass  # use defaults
+
+# ── Seniority → URL param mappings ────────────────────────────────────────────
+_LINKEDIN_F_E = {"junior": "2", "mid": "3", "senior": "4", "any": "2%2C3%2C4"}
+_DRUSHIM_EXP  = {"junior": "0-3", "mid": "3-7", "senior": "7-20", "any": None}
 os.makedirs(_DATA_DIR, exist_ok=True)
 
 def _write_progress(pct, stage, found=0):
@@ -196,25 +204,40 @@ def _heb_years(text):
 # ── Relevance & entry-level filters ──────────────────────────────────────────
 
 def is_entry_level(title, experience_hint=""):
-    """Return False if title or experience hint indicates more than MAX_EXPERIENCE years."""
+    """Return False if job does not match the configured seniority level."""
+    if _SENIORITY == "any":
+        return True  # no filtering
+
     title_lower = title.lower()
     hint_lower  = experience_hint.lower() if experience_hint else ""
     combined    = title_lower + " " + hint_lower
 
-    if any(w in title_lower for w in ["senior", "sr.", "lead", "manager", "principal", "head of", "director", "בכיר", "מנהל"]):
-        return False
+    if _SENIORITY == "senior":
+        # For senior searches — block only executive/director level
+        if any(w in title_lower for w in ["vp ", "vice president", "c-level", "cto", "cdo"]):
+            return False
+        return True
 
-    # ── Numeric patterns (English + mixed Hebrew) ──
-    # "3+ years", "3-5 years", "3 שנים"
+    if _SENIORITY == "mid":
+        # Block director/executive but allow senior analyst, senior developer etc.
+        if any(w in title_lower for w in ["director", "head of", "vp ", "vice president", "c-level"]):
+            return False
+        max_exp = 8
+    else:
+        # junior (default) — block senior titles
+        if any(w in title_lower for w in ["senior", "sr.", "lead", "manager", "principal", "head of", "director", "בכיר", "מנהל"]):
+            return False
+        max_exp = MAX_EXPERIENCE
+
+    # ── Numeric experience filter ──
     for pattern in [r"(\d+)\+?\s*(?:years?|yrs?)", r"(\d+)-\d+\s*(?:years?|yrs?)", r"(\d+)\s*שנ"]:
         for match in re.findall(pattern, combined):
             mn = int(match[0]) if isinstance(match, tuple) else int(match)
-            if mn > MAX_EXPERIENCE:
+            if mn > max_exp:
                 return False
 
-    # ── Hebrew word patterns ──
     years = _heb_years(combined)
-    if years is not None and years > MAX_EXPERIENCE:
+    if years is not None and years > max_exp:
         return False
 
     return True
@@ -537,10 +560,11 @@ def scrape_linkedin():
     jobs = []
     for role in ROLES:
         try:
+            f_e = _LINKEDIN_F_E.get(_SENIORITY, "2")
             url = (
                 f"https://www.linkedin.com/jobs/search/"
                 f"?keywords={quote_plus(role)}"
-                f"&location=Israel&f_E=2&sortBy=DD"
+                f"&location=Israel&f_E={f_e}&sortBy=DD"
             )
             resp = requests.get(url, headers=HEADERS, timeout=10)
             soup = BeautifulSoup(resp.content, "html.parser")
@@ -671,7 +695,9 @@ def scrape_drushim():
 
     for role in all_roles:
         try:
-            url  = f"https://www.drushim.co.il/jobs/search/{quote_plus(role)}/?experience=0-2&cities=2"
+            exp_param = _DRUSHIM_EXP.get(_SENIORITY, "0-3")
+            exp_str   = f"&experience={exp_param}" if exp_param else ""
+            url  = f"https://www.drushim.co.il/jobs/search/{quote_plus(role)}/?cities=2{exp_str}"
             resp = requests.get(url, headers=HEADERS, timeout=12)
             soup = BeautifulSoup(resp.content, "html.parser")
 
@@ -984,6 +1010,146 @@ def generate_html(jobs, search_links):
         f.write(html)
 
 
+# ── Telegram scraper ──────────────────────────────────────────────────────────
+
+_TELEGRAM_CHANNEL = "https://t.me/+ttg3AvOjEjNhMWU0"
+
+def _parse_telegram_job(text, date, msg_id):
+    """Parse a Telegram message into a job dict. Returns None if not relevant."""
+    text_lower = text.lower()
+
+    # Must contain at least one role keyword to be considered a job post
+    keywords = ["data", "analyst", "bi ", "developer", "engineer", "manager",
+                "דרוש", "דרושים", "hiring", "job", "position", "role", "vacancy"]
+    if not any(k in text_lower for k in keywords):
+        return None
+    if len(text.strip()) < 40:
+        return None
+
+    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    if not lines:
+        return None
+
+    # First substantial line (stripped of emojis/hashtags) = title
+    def _clean(l):
+        import unicodedata
+        out = re.sub(r'[#*•\-–—]+', '', l).strip()
+        # strip leading emoji chars (Misc Symbols / Dingbats / Supplemental)
+        while out and unicodedata.category(out[0]) in ("So", "Sm", "Sk"):
+            out = out[1:].strip()
+        return out
+
+    title = ""
+    for line in lines[:4]:
+        c = _clean(line)
+        if len(c) > 8:
+            title = c[:120]
+            break
+    if not title:
+        return None
+
+    # Apply seniority filter
+    if not is_entry_level(title, text[:300]):
+        return None
+
+    # Must be data-relevant
+    if not is_data_relevant(title):
+        # Try harder with body text keyword match
+        role_hit = any(r.lower() in text_lower for r in ROLES)
+        if not role_hit:
+            return None
+
+    # URL
+    url_m = re.search(r'https?://\S+', text)
+    url   = url_m.group(0).rstrip(').,') if url_m else f"https://t.me/secretjobs_il/{msg_id}"
+
+    # Company (look for " | CompanyName" or "@ CompanyName" or "חברת X")
+    company = "Unknown"
+    for pat in [
+        r'\|\s*([A-Za-z][A-Za-z0-9 &.]{2,35}?)(?:\s*[|\n,]|$)',
+        r'@\s*([A-Za-z][A-Za-z0-9 ]{2,35}?)(?:\s*[|\n,]|$)',
+        r'(?:חברת|ב-?)\s*([\u05d0-\u05faA-Za-z][^\n,|]{2,35}?)(?:\s*[,|\n]|$)',
+    ]:
+        m = re.search(pat, text, re.IGNORECASE | re.MULTILINE)
+        if m:
+            company = m.group(1).strip()[:50]
+            break
+
+    # Location
+    location = "Israel"
+    for loc in ["Tel Aviv", "תל אביב", "Ramat Gan", "רמת גן", "Jerusalem", "ירושלים",
+                "Herzliya", "הרצליה", "Petah Tikva", "פתח תקווה", "Haifa", "חיפה",
+                "Beer Sheva", "באר שבע", "Remote", "רימוט", "Hybrid", "היברידי"]:
+        if loc.lower() in text_lower:
+            location = loc
+            break
+
+    exp_label = extract_experience(title, text[:400])
+
+    return {
+        "title":               title,
+        "company":             company,
+        "location":            location,
+        "url":                 url,
+        "source":              "Telegram",
+        "posted":              date.strftime("%Y-%m-%d") if date else None,
+        "scraped_at":          datetime.now().isoformat(),
+        "experience_required": exp_label,
+        "description":         text[:600],
+    }
+
+
+def scrape_telegram():
+    """Scrape job posts from the Secret Jobs Telegram channel.
+    Requires TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION env vars.
+    Run telegram_setup.py once locally to generate the session string.
+    """
+    try:
+        from telethon.sync import TelegramClient
+        from telethon.sessions import StringSession
+    except ImportError:
+        print("  Telegram: telethon not installed, skipping")
+        return []
+
+    api_id      = os.environ.get("TELEGRAM_API_ID")
+    api_hash    = os.environ.get("TELEGRAM_API_HASH")
+    session_str = os.environ.get("TELEGRAM_SESSION", "")
+
+    if not api_id or not api_hash or not session_str:
+        print("  Telegram: credentials not set (TELEGRAM_API_ID / TELEGRAM_API_HASH / TELEGRAM_SESSION), skipping")
+        return []
+
+    jobs = []
+    cutoff = datetime.now() - timedelta(days=14)
+
+    try:
+        with TelegramClient(StringSession(session_str), int(api_id), api_hash) as client:
+            try:
+                entity = client.get_entity(_TELEGRAM_CHANNEL)
+            except Exception as e:
+                print(f"  Telegram: cannot access channel — {e}")
+                return []
+
+            for msg in client.iter_messages(entity, limit=400):
+                try:
+                    if not msg.text:
+                        continue
+                    msg_date = msg.date.replace(tzinfo=None)
+                    if msg_date < cutoff:
+                        break
+                    job = _parse_telegram_job(msg.text, msg_date, msg.id)
+                    if job:
+                        jobs.append(job)
+                except Exception:
+                    continue
+
+    except Exception as e:
+        print(f"  Telegram scraper error: {e}")
+
+    print(f"  Telegram: {len(jobs)} relevant jobs found")
+    return jobs
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1001,6 +1167,7 @@ def main():
         ("LinkedIn",  scrape_linkedin),
         ("Jobmaster", scrape_jobmaster),
         ("Drushim",   scrape_drushim),
+        ("Telegram",  scrape_telegram),
         # AllJobs skipped — blocked by Radware bot protection
         # Glassdoor removed — always blocked by Cloudflare
     ]

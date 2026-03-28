@@ -243,6 +243,8 @@ def api_config_post():
             payload.pop("auto_scan_hours", None)
         else:
             payload["auto_scan_hours"] = int(v)
+    if "seniority" in data and data["seniority"] in ("junior", "mid", "senior", "any"):
+        payload["seniority"] = data["seniority"]
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     return jsonify({"ok": True})
@@ -537,7 +539,11 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 .src-jobmaster{background:#c0392b;color:#fff}
 .src-drushim{background:#e8532b;color:#fff}
 .src-alljobs{background:#1a7f37;color:#fff}
+.src-telegram{background:#229ed9;color:#fff}
 .src-unknown{background:#444;color:#ccc}
+.seniority-row{display:flex;gap:6px;margin:10px 0 4px}
+.sen-btn{flex:1;padding:8px 4px;border-radius:8px;border:1px solid #2e2e48;background:#12121e;color:#777;font-size:12px;cursor:pointer;transition:all .18s;text-align:center}
+.sen-btn.active{background:linear-gradient(135deg,#667eea,#764ba2);border-color:transparent;color:#fff;font-weight:600}
 .exp-badge{background:#1e3a2f;color:#4ade80;border:1px solid #166534}
 .rel-high{background:#1a3a1a;color:#4ade80;border:1px solid #166534}
 .rel-med{background:#2a2a10;color:#facc15;border:1px solid #854d0e}
@@ -812,7 +818,14 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
         </div>
         <button class="save-roles-btn" onclick="clearRoles()" style="background:#2a1a1a;border-color:#7f1d1d;color:#f87171;flex-shrink:0">Clear All</button>
       </div>
-      <h3>Any extra preferences?</h3>
+      <h3 style="margin-top:18px">Experience level</h3>
+      <div class="seniority-row">
+        <button class="sen-btn active" id="sen-junior" onclick="setSeniority('junior',this)">Junior<br><span style="font-size:10px;opacity:.7">0-2 yrs</span></button>
+        <button class="sen-btn" id="sen-mid"    onclick="setSeniority('mid',this)">Mid<br><span style="font-size:10px;opacity:.7">3-5 yrs</span></button>
+        <button class="sen-btn" id="sen-senior" onclick="setSeniority('senior',this)">Senior<br><span style="font-size:10px;opacity:.7">5+ yrs</span></button>
+        <button class="sen-btn" id="sen-any"    onclick="setSeniority('any',this)">Any<br><span style="font-size:10px;opacity:.7">no filter</span></button>
+      </div>
+      <h3 style="margin-top:14px">Any extra preferences?</h3>
       <textarea id="notes-input" class="wiz-textarea" style="min-height:78px" placeholder="E.g. prefer Tel Aviv / Ramat Gan, not heavy ETL, Python automation a plus, hybrid ok..."></textarea>
       <div class="autoscan-row">
         <label class="toggle-wrap">
@@ -893,6 +906,7 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
     <button class="filter-btn" onclick="setFilter('source','LinkedIn',this)">LinkedIn</button>
     <button class="filter-btn" onclick="setFilter('source','Jobmaster',this)">Jobmaster</button>
     <button class="filter-btn" onclick="setFilter('source','Drushim',this)">Drushim</button>
+    <button class="filter-btn" onclick="setFilter('source','Telegram',this)">Telegram</button>
   </div>
   <div class="filter-row">
     <span class="filter-label">Sort</span>
@@ -963,7 +977,7 @@ function h(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 function ha(s){return String(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 
 function srcClass(s){
-  const m={linkedin:'src-linkedin',jobmaster:'src-jobmaster',drushim:'src-drushim',alljobs:'src-alljobs'};
+  const m={linkedin:'src-linkedin',jobmaster:'src-jobmaster',drushim:'src-drushim',alljobs:'src-alljobs',telegram:'src-telegram'};
   return m[(s||'').toLowerCase()]||'src-unknown';
 }
 function relClass(s){return s>=70?'rel-high':s>=45?'rel-med':'rel-low'}
@@ -1113,6 +1127,20 @@ async function deleteProfile(pid, e){
 }
 
 // ── Auto-scan toggle ──────────────────────────────────────────────────────────
+// ── Seniority picker ──────────────────────────────────────────────────────────
+let activeSeniority='junior';
+function setSeniority(val,btn){
+  activeSeniority=val;
+  document.querySelectorAll('.sen-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function loadSeniority(val){
+  activeSeniority=val||'junior';
+  document.querySelectorAll('.sen-btn').forEach(b=>b.classList.remove('active'));
+  const el=document.getElementById('sen-'+activeSeniority);
+  if(el) el.classList.add('active');
+}
+
 async function toggleAutoScan(on){
   const hoursEl=document.getElementById('autoscan-hours');
   if(hoursEl) hoursEl.disabled=!on;
@@ -1254,7 +1282,7 @@ async function saveResumeAndNext(){
 async function wizStartScan(){
   const notes=document.getElementById('notes-input').value.trim();
   await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({roles:activeRoles,notes})});
+    body:JSON.stringify({roles:activeRoles,notes,seniority:activeSeniority})});
 
   goStep(3);
   document.getElementById('wiz-fill').style.width='5%';
@@ -1337,6 +1365,7 @@ async function loadConfig(){
       if(btn) btn.style.display='';
     }
     if(d.notes) document.getElementById('notes-input').value=d.notes;
+    if(d.seniority) loadSeniority(d.seniority);
   }catch{}
 }
 
