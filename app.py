@@ -1019,7 +1019,7 @@ function exportCSV(){
   const cols=['title','company','location','source','relevance_score','experience_required','posted','url'];
   const esc=v=>'"'+(String(v||'').replace(/"/g,'""'))+'"';
   const rows=[cols.join(','),...filtered.map(j=>cols.map(c=>esc(j[c])).join(','))];
-  const blob=new Blob([rows.join('\n')],{type:'text/csv'});
+  const blob=new Blob([rows.join('\\n')],{type:'text/csv'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
   a.download='datahunt_jobs.csv';
@@ -1038,7 +1038,7 @@ async function openGapModal(){
       return;
     }
     document.getElementById('gap-sub').textContent=
-      'Skills appearing in your target jobs that aren\'t on your resume. Based on '+d.total_jobs+' jobs.';
+      'Skills in your target jobs not on your resume. Based on '+d.total_jobs+' jobs.';
     const maxC=d.gap[0]?d.gap[0].count:1;
     document.getElementById('gap-list').innerHTML=d.gap.length
       ? d.gap.map(g=>`<div class="gap-item">
