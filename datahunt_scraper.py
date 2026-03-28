@@ -202,18 +202,18 @@ def score_job(job):
 
     # ── Role fit ──────────────────────────────────────────────────────────────
     role_pts = 0
-    if any(t in title for t in ["bi developer", "business intelligence developer"]):
+    if "data analyst" in title or "analyst data" in title:
         role_pts = 52   # top preference
+    elif any(t in title for t in ["bi developer", "business intelligence developer"]):
+        role_pts = 48
     elif any(t in title for t in ["bi analyst", "business intelligence analyst"]):
-        role_pts = 47
-    elif "power bi" in title or "powerbi" in title:
         role_pts = 46
+    elif "power bi" in title or "powerbi" in title:
+        role_pts = 44
     elif "analytics engineer" in title:
         role_pts = 42
-    elif "data analyst" in title or "analyst data" in title:
-        role_pts = 38
     elif "reporting analyst" in title or "report analyst" in title:
-        role_pts = 34
+        role_pts = 36
     elif "ai analyst" in title:
         role_pts = 32
     elif "business analyst" in title:
@@ -235,8 +235,10 @@ def score_job(job):
     if "sql"      in haystack:                           tech += 12  # SQL > Python
     if "python"   in haystack:                           tech += 7
     if "tableau"  in haystack:                           tech += 6   # ok but not expert
-    if any(t in haystack for t in ["ssis", "etl", "dwh", "data warehouse"]): tech += 5
     if any(t in haystack for t in ["dbt", "looker"]):   tech += 4
+    # ETL/DWH penalty — Guy has Power Query only, not SSIS/heavy ETL
+    if any(t in haystack for t in ["ssis", "etl", "dwh", "data warehouse"]):
+        tech -= 6
     # Python automation bonus
     if "python" in haystack and any(w in haystack for w in
             ["automat", "workflow", "script", "pipeline", "orchestrat"]):
