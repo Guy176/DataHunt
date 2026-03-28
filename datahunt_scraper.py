@@ -271,13 +271,7 @@ def score_job(job):
     else:
         exp_pts = 2   # unknown
 
-    # ── Startup penalty ───────────────────────────────────────────────────────
-    startup_penalty = 0
-    if any(w in title + " " + company for w in
-           ["startup", "start-up", "fast-paced", "fast paced", "early stage"]):
-        startup_penalty = -8
-
-    total = role_pts + tech + loc_pts + exp_pts + startup_penalty
+    total = role_pts + tech + loc_pts + exp_pts
     return max(0, min(total, 100))
 
 
