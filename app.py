@@ -537,7 +537,6 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 .src-jobmaster{background:#c0392b;color:#fff}
 .src-drushim{background:#e8532b;color:#fff}
 .src-alljobs{background:#1a7f37;color:#fff}
-.src-glassdoor{background:#0caa41;color:#fff}
 .src-unknown{background:#444;color:#ccc}
 .exp-badge{background:#1e3a2f;color:#4ade80;border:1px solid #166534}
 .rel-high{background:#1a3a1a;color:#4ade80;border:1px solid #166534}
@@ -894,7 +893,6 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
     <button class="filter-btn" onclick="setFilter('source','LinkedIn',this)">LinkedIn</button>
     <button class="filter-btn" onclick="setFilter('source','Jobmaster',this)">Jobmaster</button>
     <button class="filter-btn" onclick="setFilter('source','Drushim',this)">Drushim</button>
-    <button class="filter-btn" onclick="setFilter('source','Glassdoor',this)">Glassdoor</button>
   </div>
   <div class="filter-row">
     <span class="filter-label">Sort</span>
@@ -958,7 +956,6 @@ const SOURCES = [
   {n:"LinkedIn", u:r=>`https://www.linkedin.com/jobs/search/?keywords=${enc(r)}&location=Israel&f_E=2&sortBy=DD`},
   {n:"Jobmaster",u:r=>`https://www.jobmaster.co.il/jobs/?q=${enc(r)}`},
   {n:"Drushim",  u:r=>`https://www.drushim.co.il/jobs/search/${enc(r)}/?experience=0-2&cities=2`},
-  {n:"Glassdoor",u:r=>`https://www.glassdoor.com/Job/israel-${r.toLowerCase().replace(/ /g,'-')}-jobs-SRCH_IL.0,6_IN119.htm`},
 ];
 
 function enc(s){return encodeURIComponent(s)}
@@ -966,7 +963,7 @@ function h(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 function ha(s){return String(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 
 function srcClass(s){
-  const m={linkedin:'src-linkedin',jobmaster:'src-jobmaster',drushim:'src-drushim',alljobs:'src-alljobs',glassdoor:'src-glassdoor'};
+  const m={linkedin:'src-linkedin',jobmaster:'src-jobmaster',drushim:'src-drushim',alljobs:'src-alljobs'};
   return m[(s||'').toLowerCase()]||'src-unknown';
 }
 function relClass(s){return s>=70?'rel-high':s>=45?'rel-med':'rel-low'}

@@ -1001,8 +1001,8 @@ def main():
         ("LinkedIn",  scrape_linkedin),
         ("Jobmaster", scrape_jobmaster),
         ("Drushim",   scrape_drushim),
-        ("Glassdoor", scrape_glassdoor),
         # AllJobs skipped — blocked by Radware bot protection
+        # Glassdoor removed — always blocked by Cloudflare
     ]
 
     completed = 0
