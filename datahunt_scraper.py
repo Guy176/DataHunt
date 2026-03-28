@@ -12,6 +12,7 @@ import time
 from datetime import datetime
 from urllib.parse import quote_plus
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Windows: force stdout to UTF-8 so Hebrew/emoji print without errors
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
@@ -479,62 +480,59 @@ def extract_experience(title, snippet=""):
 # ── Scrapers ──────────────────────────────────────────────────────────────────
 
 def scrape_linkedin():
+    """One request per role, Israel-wide. Removed per-city loop (was 7x6=42 requests)."""
     jobs = []
     for role in ROLES:
-        for location in LOCATIONS:
-            try:
-                url = (
-                    f"https://www.linkedin.com/jobs/search/"
-                    f"?keywords={quote_plus(role + ' ' + location)}"
-                    f"&location=Israel&f_E=2&sortBy=DD"
-                )
-                resp = requests.get(url, headers=HEADERS, timeout=10)
-                soup = BeautifulSoup(resp.content, "html.parser")
+        try:
+            url = (
+                f"https://www.linkedin.com/jobs/search/"
+                f"?keywords={quote_plus(role)}"
+                f"&location=Israel&f_E=2&sortBy=DD"
+            )
+            resp = requests.get(url, headers=HEADERS, timeout=10)
+            soup = BeautifulSoup(resp.content, "html.parser")
 
-                for card in soup.find_all("div", class_="base-card")[:5]:
-                    try:
-                        title_el   = card.find("h3", class_="base-search-card__title")
-                        company_el = card.find("h4", class_="base-search-card__subtitle")
-                        loc_el     = card.find("span", class_="job-search-card__location")
-                        link_el    = card.find("a",   class_="base-card__full-link")
-                        time_el    = card.find("time")
+            for card in soup.find_all("div", class_="base-card")[:10]:
+                try:
+                    title_el   = card.find("h3", class_="base-search-card__title")
+                    company_el = card.find("h4", class_="base-search-card__subtitle")
+                    loc_el     = card.find("span", class_="job-search-card__location")
+                    link_el    = card.find("a",   class_="base-card__full-link")
+                    time_el    = card.find("time")
 
-                        if not (title_el and link_el):
-                            continue
-
-                        title   = title_el.text.strip()
-                        company = company_el.text.strip() if company_el else "Unknown"
-                        loc     = loc_el.text.strip()     if loc_el     else location
-                        link    = link_el.get("href", "").split("?")[0]  # clean tracking params
-
-                        # Try to get real posting datetime from <time datetime="...">
-                        posted_iso = None
-                        if time_el:
-                            posted_iso = time_el.get("datetime") or None
-
-                        exp = extract_experience(title)
-                        if is_data_relevant(title) and is_entry_level(title, exp) and link not in cache["seen_urls"]:
-                            job = {
-                                "title":               title,
-                                "company":             company,
-                                "location":            loc,
-                                "url":                 link,
-                                "source":              "LinkedIn",
-                                "posted":              posted_iso or "Recently",
-                                "scraped_at":          datetime.now().isoformat(),
-                                "experience_required": exp,
-                            }
-                            job["relevance_score"] = score_job(job)
-                            if any(bl in job.get("company","").lower() for bl in COMPANY_BLACKLIST):
-                                continue
-                            jobs.append(job)
-                            cache["seen_urls"].append(link)
-                    except Exception:
+                    if not (title_el and link_el):
                         continue
 
-                time.sleep(2)
-            except Exception as e:
-                print(f"  LinkedIn error [{role} / {location}]: {e}")
+                    title   = title_el.text.strip()
+                    company = company_el.text.strip() if company_el else "Unknown"
+                    loc     = loc_el.text.strip()     if loc_el     else "Israel"
+                    link    = link_el.get("href", "").split("?")[0]
+
+                    posted_iso = time_el.get("datetime") if time_el else None
+
+                    exp = extract_experience(title)
+                    if is_data_relevant(title) and is_entry_level(title, exp) and link not in cache["seen_urls"]:
+                        job = {
+                            "title":               title,
+                            "company":             company,
+                            "location":            loc,
+                            "url":                 link,
+                            "source":              "LinkedIn",
+                            "posted":              posted_iso or "Recently",
+                            "scraped_at":          datetime.now().isoformat(),
+                            "experience_required": exp,
+                        }
+                        job["relevance_score"] = score_job(job)
+                        if any(bl in job.get("company","").lower() for bl in COMPANY_BLACKLIST):
+                            continue
+                        jobs.append(job)
+                        cache["seen_urls"].append(link)
+                except Exception:
+                    continue
+
+            time.sleep(1)
+        except Exception as e:
+            print(f"  LinkedIn error [{role}]: {e}")
 
     return jobs
 
@@ -598,7 +596,7 @@ def scrape_jobmaster():
                 except Exception:
                     continue
 
-            time.sleep(2)
+            time.sleep(1)
         except Exception as e:
             print(f"  Jobmaster error [{role}]: {e}")
 
@@ -675,7 +673,7 @@ def scrape_drushim():
                 except Exception:
                     continue
 
-            time.sleep(2)
+            time.sleep(1)
         except Exception as e:
             print(f"  Drushim error [{role}]: {e}")
 
@@ -746,7 +744,7 @@ def scrape_alljobs():
                 except Exception:
                     continue
 
-            time.sleep(2)
+            time.sleep(1)
         except Exception as e:
             print(f"  AllJobs error [{role}]: {e}")
 
@@ -850,7 +848,7 @@ def scrape_glassdoor():
                     except Exception:
                         continue
 
-            time.sleep(3)
+            time.sleep(1)
         except Exception as e:
             print(f"  Glassdoor error [{role}]: {e}")
 
@@ -931,35 +929,37 @@ def main():
 
     all_jobs = []
 
-    _write_progress(5, "Starting scan...", 0)
-    print("Scraping LinkedIn...")
-    li = scrape_linkedin()
-    all_jobs.extend(li)
-    print(f"   + {len(li)} jobs")
+    _write_progress(5, "Starting parallel scan...", 0)
 
-    _write_progress(30, f"LinkedIn done ({len(li)} found) — scraping Jobmaster...", len(all_jobs))
-    print("Scraping Jobmaster...")
-    jm = scrape_jobmaster()
-    all_jobs.extend(jm)
-    print(f"   + {len(jm)} jobs")
+    # Run all scrapers simultaneously — each is I/O bound so threads are ideal
+    scrapers = [
+        ("LinkedIn",  scrape_linkedin),
+        ("Jobmaster", scrape_jobmaster),
+        ("Drushim",   scrape_drushim),
+        ("Glassdoor", scrape_glassdoor),
+        # AllJobs skipped — blocked by Radware bot protection
+    ]
 
-    _write_progress(55, f"Jobmaster done ({len(jm)} found) — scraping Drushim...", len(all_jobs))
-    print("Scraping Drushim...")
-    dr = scrape_drushim()
-    all_jobs.extend(dr)
-    print(f"   + {len(dr)} jobs")
+    completed = 0
+    lock = __import__("threading").Lock()
 
-    _write_progress(75, f"Drushim done ({len(dr)} found) — scraping AllJobs...", len(all_jobs))
-    print("Scraping AllJobs...")
-    aj = scrape_alljobs()
-    all_jobs.extend(aj)
-    print(f"   + {len(aj)} jobs")
+    def _run(name, fn):
+        nonlocal completed
+        result = fn()
+        with lock:
+            completed += 1
+            pct = 10 + int(completed / len(scrapers) * 80)
+            _write_progress(pct, f"{name} done ({len(result)} found)...", len(all_jobs) + len(result))
+            print(f"   {name}: +{len(result)} jobs")
+        return result
 
-    _write_progress(88, f"AllJobs done — scraping Glassdoor...", len(all_jobs))
-    print("Scraping Glassdoor...")
-    gd = scrape_glassdoor()
-    all_jobs.extend(gd)
-    print(f"   + {len(gd)} jobs")
+    with ThreadPoolExecutor(max_workers=len(scrapers)) as ex:
+        futures = {ex.submit(_run, name, fn): name for name, fn in scrapers}
+        for future in as_completed(futures):
+            try:
+                all_jobs.extend(future.result())
+            except Exception as e:
+                print(f"  Scraper error: {e}")
 
     _write_progress(95, "Deduplicating and saving...", len(all_jobs))
 
