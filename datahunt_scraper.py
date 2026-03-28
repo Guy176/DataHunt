@@ -259,13 +259,10 @@ def is_data_relevant(title):
 # ── Resume-based relevance scoring ───────────────────────────────────────────
 
 def score_job(job):
-    """Return 0-100 relevance score for this job against the user's profile.
+    """Return dict with total 0-100 relevance score + breakdown components.
 
-    Components:
-      Role fit   (0-52)  — job title match to configured ROLES (order = priority)
-      Tech bonus (0-28)  — skills from user's resume found in job title/exp
-      Location   (-10 to +10) — proximity to Tel Aviv metro (configurable)
-      Exp fit    (0-10)  — experience level match
+    Keys: total, role (0-52), tech (0-28), location (-10..+10), exp (0-10),
+          matched_skills (list of skills found in job haystack).
     """
     title    = job.get("title", "").lower()
     exp_lbl  = job.get("experience_required", "").lower()
@@ -274,33 +271,34 @@ def score_job(job):
 
     # ── Role fit — dynamic from ROLES list (first = best match) ──────────────
     role_pts = 0
-    # Score based on position in user's ROLES list: index 0 → 52, 1 → 50, 2 → 48 …
     for i, role in enumerate(ROLES):
         if role.lower() in title:
             role_pts = max(0, 52 - i * 2)
             break
-    # Generic "analyst" fallback if nothing matched
     if role_pts == 0 and "analyst" in title:
         role_pts = 16
 
     # ── Tech bonus (capped at 28) ─────────────────────────────────────────────
-    tech = 0
+    tech           = 0
+    matched_skills = []
     if _USER_SKILLS:
-        # Dynamic: score based on how many of the user's skills appear in the job
-        matched = [s for s in _USER_SKILLS if s in haystack]
-        # Weight: first few skills (most prominent on resume) score higher
         for idx, skill in enumerate(_USER_SKILLS):
             if skill in haystack:
-                pts = max(2, 20 - idx * 2)  # 20, 18, 16 … down to 2 per skill
+                pts = max(2, 20 - idx * 2)
                 tech += pts
+                matched_skills.append(skill)
         tech = min(tech, 28)
     else:
-        # Fallback: Guy's original hardcoded scoring (Power BI / SQL / Python)
-        if "power bi" in haystack or "powerbi" in haystack: tech += 20
-        if "sql"      in haystack:                           tech += 12
-        if "python"   in haystack:                           tech += 7
-        if "tableau"  in haystack:                           tech += 6
-        if any(t in haystack for t in ["dbt", "looker"]):   tech += 4
+        if "power bi" in haystack or "powerbi" in haystack:
+            tech += 20; matched_skills.append("power bi")
+        if "sql"     in haystack:
+            tech += 12; matched_skills.append("sql")
+        if "python"  in haystack:
+            tech += 7;  matched_skills.append("python")
+        if "tableau" in haystack:
+            tech += 6;  matched_skills.append("tableau")
+        if any(t in haystack for t in ["dbt", "looker"]):
+            tech += 4
         if any(t in haystack for t in ["ssis", "etl", "dwh", "data warehouse"]):
             tech -= 6
         if "python" in haystack and any(w in haystack for w in
@@ -324,7 +322,7 @@ def score_job(job):
     elif any(c in location for c in _FAR):
         loc_pts = -10
     else:
-        loc_pts = 2   # "Israel" or unknown — neutral
+        loc_pts = 2
 
     # ── Experience fit ────────────────────────────────────────────────────────
     if any(k in exp_lbl for k in ["entry level", "0-1", "0-2"]):
@@ -334,10 +332,17 @@ def score_job(job):
     elif any(k in exp_lbl for k in ["2 yrs", "2-3", "2+ yrs"]):
         exp_pts = 5
     else:
-        exp_pts = 2   # unknown
+        exp_pts = 2
 
-    total = role_pts + tech + loc_pts + exp_pts
-    return max(0, min(total, 100))
+    total = max(0, min(role_pts + tech + loc_pts + exp_pts, 100))
+    return {
+        "total":          total,
+        "role":           role_pts,
+        "tech":           tech,
+        "location":       loc_pts,
+        "exp":            exp_pts,
+        "matched_skills": matched_skills,
+    }
 
 
 # ── Cross-site deduplication ─────────────────────────────────────────────────
@@ -570,7 +575,9 @@ def scrape_linkedin():
                             "scraped_at":          datetime.now().isoformat(),
                             "experience_required": exp,
                         }
-                        job["relevance_score"] = score_job(job)
+                        _sc = score_job(job)
+                        job["relevance_score"]  = _sc["total"]
+                        job["score_breakdown"]  = {"role": _sc["role"], "tech": _sc["tech"], "location": _sc["location"], "exp": _sc["exp"], "matched_skills": _sc["matched_skills"]}
                         if any(bl in job.get("company","").lower() for bl in COMPANY_BLACKLIST):
                             continue
                         jobs.append(job)
@@ -638,7 +645,9 @@ def scrape_jobmaster():
                             "scraped_at":          datetime.now().isoformat(),
                             "experience_required": exp,
                         }
-                        job["relevance_score"] = score_job(job)
+                        _sc = score_job(job)
+                        job["relevance_score"]  = _sc["total"]
+                        job["score_breakdown"]  = {"role": _sc["role"], "tech": _sc["tech"], "location": _sc["location"], "exp": _sc["exp"], "matched_skills": _sc["matched_skills"]}
                         jobs.append(job)
                         cache["seen_urls"].append(link)
                 except Exception:
@@ -715,7 +724,9 @@ def scrape_drushim():
                             "scraped_at":          datetime.now().isoformat(),
                             "experience_required": extract_experience(title, exp),
                         }
-                        job["relevance_score"] = score_job(job)
+                        _sc = score_job(job)
+                        job["relevance_score"]  = _sc["total"]
+                        job["score_breakdown"]  = {"role": _sc["role"], "tech": _sc["tech"], "location": _sc["location"], "exp": _sc["exp"], "matched_skills": _sc["matched_skills"]}
                         jobs.append(job)
                         cache["seen_urls"].append(link)
                 except Exception:
@@ -786,7 +797,9 @@ def scrape_alljobs():
                             "scraped_at":          datetime.now().isoformat(),
                             "experience_required": exp,
                         }
-                        job["relevance_score"] = score_job(job)
+                        _sc = score_job(job)
+                        job["relevance_score"]  = _sc["total"]
+                        job["score_breakdown"]  = {"role": _sc["role"], "tech": _sc["tech"], "location": _sc["location"], "exp": _sc["exp"], "matched_skills": _sc["matched_skills"]}
                         jobs.append(job)
                         cache["seen_urls"].append(link)
                 except Exception:
@@ -857,7 +870,9 @@ def scrape_glassdoor():
                         "scraped_at":          datetime.now().isoformat(),
                         "experience_required": exp,
                     }
-                    job["relevance_score"] = score_job(job)
+                    _sc = score_job(job)
+                    job["relevance_score"]  = _sc["total"]
+                    job["score_breakdown"]  = {"role": _sc["role"], "tech": _sc["tech"], "location": _sc["location"], "exp": _sc["exp"], "matched_skills": _sc["matched_skills"]}
                     jobs.append(job)
                     cache["seen_urls"].append(link)
             else:
@@ -890,7 +905,9 @@ def scrape_glassdoor():
                             "scraped_at":          datetime.now().isoformat(),
                             "experience_required": exp,
                         }
-                        job["relevance_score"] = score_job(job)
+                        _sc = score_job(job)
+                        job["relevance_score"]  = _sc["total"]
+                        job["score_breakdown"]  = {"role": _sc["role"], "tech": _sc["tech"], "location": _sc["location"], "exp": _sc["exp"], "matched_skills": _sc["matched_skills"]}
                         jobs.append(job)
                         cache["seen_urls"].append(link)
                     except Exception:

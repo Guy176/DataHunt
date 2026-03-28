@@ -33,6 +33,47 @@ DEFAULT_ROLES = [
 
 _status = {"running": False, "message": "Idle"}
 
+
+def _run_scan():
+    _status["running"] = True
+    _status["message"] = "Scanning..."
+    try:
+        env = {**os.environ, "DATA_DIR": DATA_DIR}
+        subprocess.run([sys.executable, SCRAPER_FILE], cwd=BASE_DIR, env=env, timeout=600)
+        _status["message"] = "Done"
+    except subprocess.TimeoutExpired:
+        _status["message"] = "Timed out"
+    except Exception as e:
+        _status["message"] = f"Error: {e}"
+    finally:
+        _status["running"] = False
+
+
+def _auto_scan_worker():
+    """Background thread: auto-trigger a scan when configured interval elapses."""
+    import time as _time
+    while True:
+        _time.sleep(3600)
+        try:
+            with open(CONFIG_FILE, encoding="utf-8") as _f:
+                _cfg = json.load(_f)
+            interval = _cfg.get("auto_scan_hours")
+            if not interval:
+                continue
+            _cache = load_cache()
+            last_run = _cache.get("last_run")
+            if last_run:
+                elapsed = (datetime.now() - datetime.fromisoformat(last_run)).total_seconds() / 3600
+                if elapsed < float(interval):
+                    continue
+            if not _status["running"]:
+                threading.Thread(target=_run_scan, daemon=True).start()
+        except Exception:
+            pass
+
+
+threading.Thread(target=_auto_scan_worker, daemon=True).start()
+
 PREVIEW_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -196,6 +237,12 @@ def api_config_post():
         payload["skills"] = extract_skills_from_text(data["resume_text"])
     if "notes" in data:
         payload["notes"] = data["notes"]
+    if "auto_scan_hours" in data:
+        v = data["auto_scan_hours"]
+        if v is None:
+            payload.pop("auto_scan_hours", None)
+        else:
+            payload["auto_scan_hours"] = int(v)
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     return jsonify({"ok": True})
@@ -205,22 +252,7 @@ def api_config_post():
 def api_scan():
     if _status["running"]:
         return jsonify({"ok": False, "message": "Already running"})
-
-    def run():
-        _status["running"] = True
-        _status["message"] = "Scanning..."
-        try:
-            env = {**os.environ, "DATA_DIR": DATA_DIR}
-            subprocess.run([sys.executable, SCRAPER_FILE], cwd=BASE_DIR, env=env, timeout=600)
-            _status["message"] = "Done"
-        except subprocess.TimeoutExpired:
-            _status["message"] = "Timed out"
-        except Exception as e:
-            _status["message"] = f"Error: {e}"
-        finally:
-            _status["running"] = False
-
-    threading.Thread(target=run, daemon=True).start()
+    threading.Thread(target=_run_scan, daemon=True).start()
     return jsonify({"ok": True})
 
 
@@ -309,6 +341,115 @@ def api_preview():
         return jsonify({
             "description": f"Could not load preview ({e}). Please visit the original posting."
         })
+
+
+# ── Skills gap ────────────────────────────────────────────────────────────────
+
+@app.route("/api/skills-gap")
+def api_skills_gap():
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        cfg = {}
+
+    user_skills = set(s.lower() for s in cfg.get("skills", []))
+    if not user_skills:
+        return jsonify({"ok": False, "error": "No resume uploaded yet"})
+
+    from datahunt_scraper import TECH_VOCAB
+    jobs  = load_jobs()
+    total = len(jobs)
+    if not total:
+        return jsonify({"ok": False, "error": "No jobs scanned yet"})
+
+    counts = {}
+    for job in jobs:
+        haystack = (job.get("title", "") + " " + job.get("experience_required", "")).lower()
+        for skill in TECH_VOCAB:
+            pat = r'\b' + re.escape(skill) + r'\b' if len(skill) <= 3 else None
+            hit = (re.search(pat, haystack) if pat else skill in haystack)
+            if hit and skill not in user_skills:
+                counts[skill] = counts.get(skill, 0) + 1
+
+    gap = sorted(
+        [{"skill": s, "count": c, "pct": round(c * 100 / total)} for s, c in counts.items() if c >= 2],
+        key=lambda x: -x["count"]
+    )[:20]
+    return jsonify({"ok": True, "gap": gap, "total_jobs": total, "user_skills": sorted(user_skills)})
+
+
+# ── Resume profiles ────────────────────────────────────────────────────────────
+
+@app.route("/api/profiles", methods=["GET"])
+def api_profiles_get():
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        cfg = {}
+    return jsonify({"profiles": cfg.get("profiles", []), "active_profile": cfg.get("active_profile")})
+
+
+@app.route("/api/profiles", methods=["POST"])
+def api_profiles_post():
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Name required"})
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        cfg = {}
+    profiles = cfg.get("profiles", [])
+    pid = str(int(datetime.now().timestamp()))
+    profile = {
+        "id":          pid,
+        "name":        name,
+        "resume_text": cfg.get("resume_text", ""),
+        "skills":      cfg.get("skills", []),
+        "roles":       cfg.get("roles", []),
+    }
+    profiles.append(profile)
+    cfg["profiles"] = profiles[-3:]   # keep max 3
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    return jsonify({"ok": True, "profile": profile})
+
+
+@app.route("/api/profiles/<pid>/activate", methods=["POST"])
+def api_profiles_activate(pid):
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        return jsonify({"ok": False, "error": "No config"})
+    profile = next((p for p in cfg.get("profiles", []) if p["id"] == pid), None)
+    if not profile:
+        return jsonify({"ok": False, "error": "Not found"})
+    cfg["resume_text"]    = profile["resume_text"]
+    cfg["skills"]         = profile["skills"]
+    cfg["roles"]          = profile["roles"]
+    cfg["active_profile"] = pid
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    return jsonify({"ok": True, "profile": profile})
+
+
+@app.route("/api/profiles/<pid>", methods=["DELETE"])
+def api_profiles_delete(pid):
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        return jsonify({"ok": False})
+    cfg["profiles"] = [p for p in cfg.get("profiles", []) if p["id"] != pid]
+    if cfg.get("active_profile") == pid:
+        cfg.pop("active_profile", None)
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    return jsonify({"ok": True})
 
 
 # ── Dashboard HTML ────────────────────────────────────────────────────────────
@@ -498,6 +639,73 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 .prefs-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.85);padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
 .prefs-btn:hover{background:rgba(255,255,255,.22);color:#fff}
 
+/* ── Application tracker ── */
+.status-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.status-btn{border:1px solid #2e2e48;background:#1e1e30;color:#666;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;opacity:.6;transition:all .15s}
+.status-btn:hover{opacity:1;border-color:#667eea;color:#fff}
+.status-btn.active{opacity:1}
+.status-btn.active.s-saved{background:#1e2d4a;color:#7eb4f0;border-color:#3a5a9a}
+.status-btn.active.s-applied{background:#1e3a2f;color:#4ade80;border-color:#166534}
+.status-btn.active.s-interviewing{background:#2a2a10;color:#facc15;border-color:#854d0e}
+.status-btn.active.s-rejected{background:#2a1a1a;color:#f87171;border-color:#7f1d1d}
+.status-clear{background:none;border:none;color:#444;cursor:pointer;font-size:13px;line-height:1;padding:0 4px;transition:color .15s}
+.status-clear:hover{color:#f87171}
+/* pipeline row */
+.pipeline{display:flex;gap:14px;padding:7px 14px;background:#12121f;border-bottom:1px solid #2a2a40;flex-wrap:wrap;align-items:center}
+.pipeline-lbl{font-size:10px;color:#444;text-transform:uppercase;letter-spacing:.4px;margin-right:4px}
+.pipeline-item{display:flex;align-items:center;gap:5px;font-size:12px;color:#666}
+.pipeline-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.pipeline-count{font-weight:700;color:#e0e0e0}
+/* NEW + stale badges */
+.new-badge{background:#7c3aed;color:#fff}
+.stale-badge{background:#292929;color:#555;border:1px solid #333}
+.stale-card .job-title{color:#888}
+.stale-card .job-company{color:#666}
+/* score breakdown */
+.breakdown{background:#0f0f1a;border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.breakdown-title{color:#555;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.breakdown-row{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.breakdown-label{color:#777;font-size:11px;min-width:76px}
+.breakdown-bar-wrap{flex:1;background:#1e1e30;border-radius:3px;height:5px;overflow:hidden}
+.breakdown-bar{height:100%;border-radius:3px}
+.breakdown-val{font-size:11px;color:#aaa;font-weight:700;min-width:30px;text-align:right}
+.breakdown-skills{margin-top:7px;font-size:11px;color:#666}
+.breakdown-skill-tag{display:inline-block;background:#1e2d4a;color:#7eb4f0;border:1px solid #3a5a9a;padding:2px 7px;border-radius:10px;margin:2px 2px 0 0;font-size:11px}
+/* skills gap modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:600;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:#161625;border:1px solid #2e2e48;border-radius:14px;padding:24px;max-width:500px;width:100%;max-height:80vh;overflow-y:auto}
+.modal h2{font-size:17px;color:#fff;margin-bottom:4px}
+.modal-sub{font-size:12px;color:#555;margin-bottom:16px}
+.gap-item{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.gap-skill{font-size:12px;color:#e0e0e0;min-width:110px;font-weight:600}
+.gap-bar-wrap{flex:1;background:#1e1e30;border-radius:3px;height:6px;overflow:hidden}
+.gap-bar{height:100%;background:linear-gradient(90deg,#667eea,#a78bfa);border-radius:3px}
+.gap-pct{font-size:11px;color:#666;min-width:36px;text-align:right}
+.modal-close{background:none;border:1px solid #2e2e48;color:#777;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:12px;margin-top:14px;transition:all .15s}
+.modal-close:hover{border-color:#667eea;color:#fff}
+/* profiles */
+.profile-list{display:flex;gap:7px;flex-wrap:wrap}
+.profile-chip{display:inline-flex;align-items:center;gap:4px;background:#1a1a2e;border:1px solid #2e2e48;color:#888;padding:5px 10px;border-radius:20px;font-size:12px;cursor:pointer;transition:all .15s}
+.profile-chip:hover{border-color:#667eea;color:#fff}
+.profile-chip.active-profile{background:#1e2d4a;border-color:#3a5a9a;color:#7eb4f0}
+.profile-chip-x{background:none;border:none;color:#555;cursor:pointer;font-size:13px;line-height:1;padding:0 2px;transition:color .15s}
+.profile-chip-x:hover{color:#f87171}
+/* action buttons (Export / Skills Gap) */
+.action-btn{background:#1e1e30;border:1px solid #2e2e48;color:#a78bfa;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+.action-btn:hover{border-color:#667eea;color:#fff}
+/* auto-scan toggle */
+.autoscan-row{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+.toggle-wrap{display:flex;align-items:center;gap:8px;font-size:13px;color:#888;cursor:pointer}
+.tog{position:relative;width:36px;height:20px;flex-shrink:0}
+.tog input{opacity:0;width:0;height:0}
+.tog-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#2e2e48;border-radius:20px;transition:.3s}
+.tog-slider:before{position:absolute;content:'';width:14px;height:14px;left:3px;bottom:3px;background:#555;border-radius:50%;transition:.3s}
+.tog input:checked+.tog-slider{background:#667eea}
+.tog input:checked+.tog-slider:before{transform:translateX(16px);background:#fff}
+.autoscan-hours{background:#1e1e30;border:1px solid #2e2e48;color:#e0e0e0;padding:4px 8px;border-radius:6px;font-size:12px;width:58px;outline:none}
+.autoscan-hours:focus{border-color:#667eea}
+.autoscan-hours:disabled{opacity:.4}
+
 /* ═══════════════ DESKTOP ENHANCEMENTS ═══════════════ */
 @media(min-width:700px){
   .header{flex-direction:row;align-items:center;padding:22px 40px;gap:20px}
@@ -544,10 +752,15 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
           <div class="upload-hint">PDF or Word (.docx) &bull; max 5MB</div>
           <div class="upload-status" id="upload-status"></div>
         </label>
+        <div id="profile-section" style="display:none">
+          <div style="font-size:11px;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Saved profiles</div>
+          <div class="profile-list" id="profile-list"></div>
+        </div>
         <div style="display:flex;align-items:center;gap:10px;color:#333;font-size:12px"><div style="flex:1;height:1px;background:#2a2a3e"></div>or paste below<div style="flex:1;height:1px;background:#2a2a3e"></div></div>
         <textarea id="resume-input" class="wiz-textarea" placeholder="Describe your skills and experience...&#10;E.g. 2 years as BI Developer, strong Power BI and SQL, looking for data/analytics roles in Tel Aviv."></textarea>
         <div class="wiz-actions">
           <span class="wiz-skip" onclick="goStep(2)">Skip for now</span>
+          <button class="wiz-btn-ghost" id="save-profile-btn" style="display:none" onclick="saveAsProfilePrompt()">&#9733; Save Profile</button>
           <button class="wiz-btn" onclick="saveResumeAndNext()">Next &#8594;</button>
         </div>
       </div>
@@ -602,6 +815,14 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
       </div>
       <h3>Any extra preferences?</h3>
       <textarea id="notes-input" class="wiz-textarea" style="min-height:78px" placeholder="E.g. prefer Tel Aviv / Ramat Gan, not heavy ETL, Python automation a plus, hybrid ok..."></textarea>
+      <div class="autoscan-row">
+        <label class="toggle-wrap">
+          <label class="tog"><input type="checkbox" id="autoscan-toggle" onchange="toggleAutoScan(this.checked)"><span class="tog-slider"></span></label>
+          Auto-scan every
+        </label>
+        <input class="autoscan-hours" id="autoscan-hours" type="number" min="1" max="168" value="24" disabled>
+        <span style="font-size:12px;color:#555">hours</span>
+      </div>
       <div class="wiz-actions">
         <button class="wiz-btn-ghost" onclick="goResults()" id="view-existing-btn" style="display:none">View existing results</button>
         <button class="wiz-btn" onclick="wizStartScan()">&#128269; Start Scan</button>
@@ -650,6 +871,15 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
   <div class="stat-card"><div class="stat-number" id="s-co">-</div><div class="stat-label">Companies</div></div>
 </div>
 
+<!-- PIPELINE -->
+<div class="pipeline" id="pipeline-row">
+  <span class="pipeline-lbl">Tracking:</span>
+  <span class="pipeline-item"><span class="pipeline-dot" style="background:#7eb4f0"></span><span class="pipeline-count" id="p-saved">0</span>&nbsp;Saved</span>
+  <span class="pipeline-item"><span class="pipeline-dot" style="background:#4ade80"></span><span class="pipeline-count" id="p-applied">0</span>&nbsp;Applied</span>
+  <span class="pipeline-item"><span class="pipeline-dot" style="background:#facc15"></span><span class="pipeline-count" id="p-interviewing">0</span>&nbsp;Interviewing</span>
+  <span class="pipeline-item"><span class="pipeline-dot" style="background:#f87171"></span><span class="pipeline-count" id="p-rejected">0</span>&nbsp;Rejected</span>
+</div>
+
 <!-- FILTERS -->
 <div class="filters">
   <div class="filter-row">
@@ -674,6 +904,10 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
     <button class="filter-btn active" onclick="setFilter('view','list',this)">&#9776; List</button>
     <button class="filter-btn" onclick="setFilter('view','grid',this)">&#9783; Grid</button>
   </div>
+  <div class="filter-row" style="gap:6px">
+    <button class="action-btn" onclick="openGapModal()">&#128270; Skills Gap</button>
+    <button class="action-btn" onclick="exportCSV()">&#8595; Export CSV</button>
+  </div>
   <input class="search-box" id="search-input" type="text" placeholder="&#128269; Search title or company..." oninput="renderJobs()">
 </div>
 
@@ -689,6 +923,17 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
   <div class="links-grid" id="links-grid"></div>
 </div>
 
+<!-- SKILLS GAP MODAL -->
+<div id="gap-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeGapModal()">
+  <div class="modal">
+    <h2>&#128270; Skills Gap Analysis</h2>
+    <p class="modal-sub" id="gap-sub">Skills appearing in your target jobs that aren&#39;t on your resume.</p>
+    <div id="gap-list" style="min-height:60px"></div>
+    <div id="gap-you" style="margin-top:14px;font-size:11px;color:#444;line-height:1.8"></div>
+    <button class="modal-close" onclick="closeGapModal()">Close</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 </div><!-- /results-wrap -->
@@ -700,6 +945,14 @@ let pollInterval = null;
 const expandedCards = new Set();
 const loadedDescs  = new Map();
 let activeRoles = [];
+
+// ── Persistent state ──────────────────────────────────────────────────────────
+let jobStatuses = {};   // url → 'saved'|'applied'|'interviewing'|'rejected'
+let lastVisitTime = null;
+
+function _saveStatuses(){ try{localStorage.setItem('dh_statuses',JSON.stringify(jobStatuses));}catch{} }
+function _loadStatuses(){ try{jobStatuses=JSON.parse(localStorage.getItem('dh_statuses')||'{}');}catch{jobStatuses={};} }
+_loadStatuses();
 
 const SOURCES = [
   {n:"LinkedIn", u:r=>`https://www.linkedin.com/jobs/search/?keywords=${enc(r)}&location=Israel&f_E=2&sortBy=DD`},
@@ -728,6 +981,157 @@ function fmtDate(iso){
     if(h<48) return 'Yesterday';
     return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
   }catch{return iso}
+}
+
+function isNew(j){
+  if(!j.scraped_at||!lastVisitTime) return false;
+  try{return new Date(j.scraped_at)>new Date(lastVisitTime);}catch{return false;}
+}
+function isStale(j){
+  if(!j.scraped_at) return false;
+  try{return (new Date()-new Date(j.scraped_at))>14*24*3600000;}catch{return false;}
+}
+
+// ── Pipeline ──────────────────────────────────────────────────────────────────
+function renderPipeline(){
+  const counts={saved:0,applied:0,interviewing:0,rejected:0};
+  Object.values(jobStatuses).forEach(s=>{ if(counts[s]!==undefined) counts[s]++; });
+  ['saved','applied','interviewing','rejected'].forEach(k=>{
+    const el=document.getElementById('p-'+k);
+    if(el) el.textContent=counts[k];
+  });
+}
+
+// ── Application status ────────────────────────────────────────────────────────
+function setJobStatus(url, status, e){
+  if(e) e.stopPropagation();
+  if(status==='') delete jobStatuses[url];
+  else            jobStatuses[url]=status;
+  _saveStatuses();
+  renderPipeline();
+  renderJobs();
+}
+
+// ── Export CSV ────────────────────────────────────────────────────────────────
+function exportCSV(){
+  const filtered=applyFilters(allJobs);
+  if(!filtered.length){showToast('No jobs to export');return;}
+  const cols=['title','company','location','source','relevance_score','experience_required','posted','url'];
+  const esc=v=>'"'+(String(v||'').replace(/"/g,'""'))+'"';
+  const rows=[cols.join(','),...filtered.map(j=>cols.map(c=>esc(j[c])).join(','))];
+  const blob=new Blob([rows.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='datahunt_jobs.csv';
+  a.click();
+  showToast('Exported '+filtered.length+' jobs');
+}
+
+// ── Skills Gap Modal ──────────────────────────────────────────────────────────
+async function openGapModal(){
+  document.getElementById('gap-modal').style.display='flex';
+  document.getElementById('gap-list').innerHTML='<div style="color:#555;font-size:13px;padding:20px 0;text-align:center">Loading...</div>';
+  try{
+    const d=await (await fetch('/api/skills-gap')).json();
+    if(!d.ok){
+      document.getElementById('gap-list').innerHTML=`<div style="color:#f87171;font-size:13px">${h(d.error)}</div>`;
+      return;
+    }
+    document.getElementById('gap-sub').textContent=
+      'Skills appearing in your target jobs that aren\'t on your resume. Based on '+d.total_jobs+' jobs.';
+    const maxC=d.gap[0]?d.gap[0].count:1;
+    document.getElementById('gap-list').innerHTML=d.gap.length
+      ? d.gap.map(g=>`<div class="gap-item">
+          <span class="gap-skill">${h(g.skill)}</span>
+          <div class="gap-bar-wrap"><div class="gap-bar" style="width:${Math.round(g.count/maxC*100)}%"></div></div>
+          <span class="gap-pct">${g.pct}%</span>
+        </div>`).join('')
+      : '<div style="color:#4ade80;font-size:13px;padding:10px 0">Great news — no significant skill gaps found!</div>';
+    if(d.user_skills&&d.user_skills.length){
+      document.getElementById('gap-you').innerHTML=
+        '<span style="color:#444;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Your resume skills:</span><br>'+
+        d.user_skills.map(s=>`<span class="breakdown-skill-tag">${h(s)}</span>`).join('');
+    }
+  }catch(e){
+    document.getElementById('gap-list').innerHTML=`<div style="color:#f87171;font-size:13px">Error: ${h(e.message)}</div>`;
+  }
+}
+function closeGapModal(){ document.getElementById('gap-modal').style.display='none'; }
+
+// ── Resume Profiles ───────────────────────────────────────────────────────────
+let savedProfiles=[], activeProfileId=null;
+
+async function loadProfiles(){
+  try{
+    const d=await (await fetch('/api/profiles')).json();
+    savedProfiles=d.profiles||[];
+    activeProfileId=d.active_profile||null;
+    renderProfileChips();
+    const sec=document.getElementById('profile-section');
+    const btn=document.getElementById('save-profile-btn');
+    if(sec) sec.style.display=savedProfiles.length?'':'none';
+    if(btn) btn.style.display='';
+  }catch{}
+}
+
+function renderProfileChips(){
+  const el=document.getElementById('profile-list');
+  if(!el) return;
+  el.innerHTML=savedProfiles.map(p=>`
+    <span class="profile-chip${p.id===activeProfileId?' active-profile':''}" onclick="activateProfile('${ha(p.id)}')">
+      ${h(p.name)}
+      <button class="profile-chip-x" onclick="deleteProfile('${ha(p.id)}',event)">&#215;</button>
+    </span>`).join('');
+  const sec=document.getElementById('profile-section');
+  if(sec) sec.style.display=savedProfiles.length?'':'none';
+}
+
+async function saveAsProfilePrompt(){
+  const name=prompt('Profile name (e.g. "Data Analyst", "BI Focus"):','');
+  if(!name||!name.trim()) return;
+  const d=await (await fetch('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:name.trim()})})).json();
+  if(d.ok){ savedProfiles.push(d.profile); renderProfileChips(); showToast('Profile saved: '+name); }
+  else showToast(d.error||'Could not save profile');
+}
+
+async function activateProfile(pid){
+  const d=await (await fetch('/api/profiles/'+pid+'/activate',{method:'POST'})).json();
+  if(d.ok){
+    activeProfileId=pid;
+    renderProfileChips();
+    const p=d.profile;
+    if(p.resume_text){ document.getElementById('resume-input').value=p.resume_text; }
+    if(p.roles){ activeRoles=p.roles; renderRoleChips(); }
+    showToast('Profile loaded');
+  }
+}
+
+async function deleteProfile(pid, e){
+  if(e) e.stopPropagation();
+  savedProfiles=savedProfiles.filter(p=>p.id!==pid);
+  if(activeProfileId===pid) activeProfileId=null;
+  renderProfileChips();
+  await fetch('/api/profiles/'+pid,{method:'DELETE'});
+}
+
+// ── Auto-scan toggle ──────────────────────────────────────────────────────────
+async function toggleAutoScan(on){
+  const hoursEl=document.getElementById('autoscan-hours');
+  if(hoursEl) hoursEl.disabled=!on;
+  const hours=on?(parseInt(hoursEl&&hoursEl.value)||24):null;
+  await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({auto_scan_hours:hours})});
+}
+
+async function loadAutoScanState(){
+  try{
+    const d=await (await fetch('/api/config')).json();
+    const h=d.auto_scan_hours;
+    const tog=document.getElementById('autoscan-toggle');
+    const hrs=document.getElementById('autoscan-hours');
+    if(tog&&h){ tog.checked=true; if(hrs){hrs.value=h;hrs.disabled=false;} }
+  }catch{}
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
@@ -801,6 +1205,8 @@ async function uploadResume(file){
       document.getElementById('resume-input').value=d.text;
       status.className='upload-status ok';
       status.textContent='Resume loaded — '+d.text.split(' ').length+' words extracted';
+      const btn=document.getElementById('save-profile-btn');
+      if(btn) btn.style.display='';
     } else {
       status.className='upload-status err';
       status.textContent=d.error||'Upload failed';
@@ -833,7 +1239,10 @@ function goResults(){
   document.getElementById('wiz').style.display='none';
   document.getElementById('results-wrap').style.display='';
   localStorage.setItem('datahunt_done','1');
-  loadJobs(); loadStats();
+  // Record the current time as "last visit" BEFORE loading so new jobs on THIS load get the badge
+  lastVisitTime = localStorage.getItem('dh_last_visit');
+  localStorage.setItem('dh_last_visit', new Date().toISOString());
+  loadJobs(); loadStats(); renderPipeline();
 }
 
 async function saveResumeAndNext(){
@@ -925,7 +1334,11 @@ async function loadConfig(){
     const d=await (await fetch('/api/config')).json();
     activeRoles=d.roles||[];
     renderRoleChips();
-    if(d.resume_text) document.getElementById('resume-input').value=d.resume_text;
+    if(d.resume_text){
+      document.getElementById('resume-input').value=d.resume_text;
+      const btn=document.getElementById('save-profile-btn');
+      if(btn) btn.style.display='';
+    }
     if(d.notes) document.getElementById('notes-input').value=d.notes;
   }catch{}
 }
@@ -958,18 +1371,62 @@ function renderJobs(){
     const exp=j.experience_required||'Entry Level';
     const score=j.relevance_score||0;
     const isExp=expandedCards.has(i);
+    const stale=isStale(j);
+    const curStatus=jobStatuses[j.url]||'';
+
     const descHtml=isExp
       ? (loadedDescs.has(i)
           ? `<div class="card-desc">${h(loadedDescs.get(i))}</div>`
           : '<div class="card-loading"><div class="spinner"></div> Loading description...</div>')
       : '';
-    return `<div class="job-card${isExp?' expanded':''}" id="card-${i}">
+
+    // Score breakdown (only in expanded cards that have breakdown data)
+    const bd=j.score_breakdown||{};
+    const breakdownHtml=isExp&&bd.role!==undefined?`
+      <div class="breakdown">
+        <div class="breakdown-title">Match Breakdown</div>
+        <div class="breakdown-row">
+          <span class="breakdown-label">Role fit</span>
+          <div class="breakdown-bar-wrap"><div class="breakdown-bar" style="width:${Math.round(bd.role/52*100)}%;background:#667eea"></div></div>
+          <span class="breakdown-val">${bd.role}/52</span>
+        </div>
+        <div class="breakdown-row">
+          <span class="breakdown-label">Tech match</span>
+          <div class="breakdown-bar-wrap"><div class="breakdown-bar" style="width:${Math.round(Math.max(0,bd.tech)/28*100)}%;background:#a78bfa"></div></div>
+          <span class="breakdown-val">${bd.tech}/28</span>
+        </div>
+        <div class="breakdown-row">
+          <span class="breakdown-label">Location</span>
+          <div class="breakdown-bar-wrap"><div class="breakdown-bar" style="width:${Math.round((bd.location+10)/20*100)}%;background:#4ade80"></div></div>
+          <span class="breakdown-val">${bd.location>0?'+':''}${bd.location}</span>
+        </div>
+        <div class="breakdown-row">
+          <span class="breakdown-label">Exp fit</span>
+          <div class="breakdown-bar-wrap"><div class="breakdown-bar" style="width:${Math.round(bd.exp/10*100)}%;background:#facc15"></div></div>
+          <span class="breakdown-val">${bd.exp}/10</span>
+        </div>
+        ${bd.matched_skills&&bd.matched_skills.length?`<div class="breakdown-skills">Matched: ${bd.matched_skills.slice(0,8).map(s=>`<span class="breakdown-skill-tag">${h(s)}</span>`).join('')}</div>`:''}
+      </div>`:'';
+
+    // Application status buttons (only in expanded cards)
+    const statusBtns=isExp?`
+      <div class="status-row">
+        <span style="font-size:11px;color:#555;margin-right:2px">Track:</span>
+        ${['saved','applied','interviewing','rejected'].map(s=>`
+          <button class="status-btn${curStatus===s?' active s-'+s:''}" onclick="setJobStatus('${ha(j.url)}','${s}',event)">${s.charAt(0).toUpperCase()+s.slice(1)}</button>`).join('')}
+        ${curStatus?`<button class="status-clear" title="Clear status" onclick="setJobStatus('${ha(j.url)}','',event)">&#10005;</button>`:''}
+      </div>`:'';
+
+    return `<div class="job-card${isExp?' expanded':''}${stale?' stale-card':''}" id="card-${i}">
       <div class="card-header" onclick="toggleCard(${i},'${ha(j.url)}')">
         <div class="card-body-left">
           <div class="badges">
             <span class="badge ${srcClass(j.source)}">${h(j.source||'?')}</span>
             <span class="badge exp-badge">${h(exp)}</span>
             <span class="badge ${relClass(score)}">${relLabel(score)}</span>
+            ${isNew(j)?'<span class="badge new-badge">NEW</span>':''}
+            ${stale?'<span class="badge stale-badge">Old</span>':''}
+            ${curStatus?`<span class="badge" style="background:#2a2a3a;color:#888;border:1px solid #3a3a50">${curStatus}</span>`:''}
           </div>
           <div class="job-title">${h(j.title||'Untitled')}</div>
           <div class="job-company">${h(j.company||'')}</div>
@@ -981,6 +1438,8 @@ function renderJobs(){
         <div class="card-arrow">&#9660;</div>
       </div>
       <div class="card-expand">
+        ${statusBtns}
+        ${breakdownHtml}
         <div id="desc-${i}">${descHtml}</div>
         <div class="expand-actions">
           <a class="apply-link" href="${ha(j.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open Job Page &#8594;</a>
@@ -1102,14 +1561,18 @@ function buildLinks(){
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init(){
   await loadConfig();
+  await loadProfiles();
+  await loadAutoScanState();
+  _loadStatuses();
   const done=localStorage.getItem('datahunt_done');
   if(done){
-    // Returning user — check if jobs exist
     const jobs=await (await fetch('/api/jobs')).json();
     if(jobs.length>0){
-      allJobs=jobs; renderJobs(); loadStats();
+      allJobs=jobs;
+      lastVisitTime=localStorage.getItem('dh_last_visit');
+      localStorage.setItem('dh_last_visit', new Date().toISOString());
+      renderJobs(); loadStats(); renderPipeline();
       goResults();
-      // Show "View existing results" button if they land on step 2
       const vb=document.getElementById('view-existing-btn');
       if(vb) vb.style.display='';
     } else {
@@ -1118,7 +1581,6 @@ async function init(){
   } else {
     showWizard(1);
   }
-  // Always show view-existing if jobs available
   fetch('/api/jobs').then(r=>r.json()).then(jobs=>{
     const vb=document.getElementById('view-existing-btn');
     if(vb&&jobs.length>0) vb.style.display='';

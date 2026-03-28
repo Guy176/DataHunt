@@ -49,7 +49,9 @@
       "Bash(curl -s http://127.0.0.1:5001/api/stats)",
       "Bash(py -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(''''Total jobs:'''', d[''''total'''']\\)\")",
       "Bash(py -m py_compile app.py)",
-      "Bash(py -m py_compile datahunt_scraper.py)"
+      "Bash(py -m py_compile datahunt_scraper.py)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''app.py''\\).read\\(\\)\\); print\\(''app.py OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''datahunt_scraper.py''\\).read\\(\\)\\); print\\(''datahunt_scraper.py OK''\\)\")"
     ]
   }
 }
