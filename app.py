@@ -168,7 +168,7 @@ def api_config_get():
         with open(CONFIG_FILE, encoding="utf-8") as f:
             return jsonify(json.load(f))
     except Exception:
-        return jsonify({"roles": DEFAULT_ROLES})
+        return jsonify({"roles": []})
 
 
 @app.route("/api/config", methods=["POST"])
@@ -426,25 +426,47 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 .toast.show{opacity:1}
 
 /* ── Wizard ── */
-.wiz-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:#0f0f1a}
-.wiz-card{background:#161625;border:1px solid #2e2e48;border-radius:16px;padding:28px 24px;width:100%;max-width:500px;display:flex;flex-direction:column;gap:16px}
-.wiz-logo{font-size:22px;font-weight:800;color:#fff;text-align:center;padding-bottom:4px}
+.wiz-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+
+/* Step 1 hero background */
+#wiz-1{background:radial-gradient(ellipse at 60% 20%,rgba(102,126,234,.18) 0%,transparent 60%),radial-gradient(ellipse at 20% 80%,rgba(118,75,162,.15) 0%,transparent 55%),#0a0a14;position:relative;overflow:hidden}
+#wiz-1::before{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23667eea' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");pointer-events:none}
+.wiz-hero-wrap{display:flex;flex-direction:column;align-items:center;width:100%;max-width:520px;gap:0}
+.wiz-hero{text-align:center;padding:0 0 28px;position:relative}
+.wiz-hero-badge{display:inline-block;background:rgba(102,126,234,.15);border:1px solid rgba(102,126,234,.35);color:#a78bfa;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:5px 14px;border-radius:99px;margin-bottom:20px}
+.wiz-hero-title{font-size:36px;font-weight:900;line-height:1.15;color:#fff;letter-spacing:-.5px}
+.wiz-hero-title span{background:linear-gradient(135deg,#667eea,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.wiz-hero-sub{font-size:14px;color:#6a6a8a;margin-top:12px;line-height:1.6;max-width:380px;margin-left:auto;margin-right:auto}
+.wiz-card{background:rgba(18,18,30,.95);border:1px solid rgba(102,126,234,.2);border-radius:16px;padding:28px 24px;width:100%;max-width:520px;display:flex;flex-direction:column;gap:16px;box-shadow:0 24px 64px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.03)}
+.wiz-card-step2{background:#161625;border:1px solid #2e2e48;box-shadow:none}
 .wiz-card h2{font-size:20px;font-weight:700;color:#fff}
-.wiz-card h3{font-size:13px;font-weight:600;color:#888;margin-top:6px}
-.wiz-sub{font-size:13px;color:#888;line-height:1.5}
-.wiz-textarea{width:100%;background:#1e1e30;border:1px solid #2e2e48;color:#e0e0e0;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;resize:vertical;min-height:110px;outline:none;font-family:inherit;transition:border-color .15s}
+.wiz-card h3{font-size:12px;font-weight:700;color:#667eea;text-transform:uppercase;letter-spacing:.8px;margin-top:4px}
+.wiz-sub{font-size:13px;color:#6a6a8a;line-height:1.6}
+.wiz-textarea{width:100%;background:#0f0f1a;border:1px solid #2a2a3e;color:#e0e0e0;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;resize:vertical;min-height:100px;outline:none;font-family:inherit;transition:border-color .15s}
 .wiz-textarea:focus{border-color:#667eea}
-.wiz-textarea::placeholder{color:#555}
+.wiz-textarea::placeholder{color:#444}
 .wiz-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin-top:4px}
-.wiz-btn{background:linear-gradient(135deg,#667eea,#764ba2);border:none;color:#fff;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:all .18s}
-.wiz-btn:hover{opacity:.9;transform:translateY(-1px)}
-.wiz-btn-ghost{background:transparent;border:1px solid #2e2e48;color:#888;padding:11px 18px;border-radius:8px;font-size:13px;cursor:pointer;transition:all .18s}
+.wiz-btn{background:linear-gradient(135deg,#667eea,#764ba2);border:none;color:#fff;padding:13px 32px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:all .18s;box-shadow:0 4px 20px rgba(102,126,234,.35)}
+.wiz-btn:hover{transform:translateY(-1px);box-shadow:0 6px 28px rgba(102,126,234,.5)}
+.wiz-btn-ghost{background:transparent;border:1px solid #2e2e48;color:#777;padding:12px 18px;border-radius:8px;font-size:13px;cursor:pointer;transition:all .18s}
 .wiz-btn-ghost:hover{border-color:#667eea;color:#a78bfa}
-.wiz-skip{color:#555;font-size:13px;cursor:pointer;padding:10px;transition:color .15s}
-.wiz-skip:hover{color:#aaa}
-.wiz-back{background:none;border:none;color:#777;font-size:13px;cursor:pointer;padding:0 0 4px;text-align:left;transition:color .15s}
+.wiz-skip{color:#444;font-size:13px;cursor:pointer;padding:10px;transition:color .15s;text-decoration:underline;text-underline-offset:3px}
+.wiz-skip:hover{color:#888}
+.wiz-back{background:none;border:none;color:#666;font-size:13px;cursor:pointer;padding:0 0 4px;text-align:left;transition:color .15s}
 .wiz-back:hover{color:#fff}
-.wiz-roles-area{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;background:#1e1e30;border:1px solid #2e2e48;border-radius:8px;min-height:46px}
+.wiz-roles-area{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 14px;background:#1e1e30;border:1px solid #2e2e48;border-radius:8px;min-height:52px}
+.role-chip{gap:6px;padding:5px 8px 5px 12px;font-size:12px}
+
+/* Custom dropdown */
+.custom-dd-wrap{position:relative;flex-shrink:0}
+.custom-dd-btn{background:#1e1e30;border:1px solid #2e2e48;color:#a78bfa;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+.custom-dd-btn:hover{border-color:#667eea;color:#fff}
+.custom-dd-list{display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:220px;background:#1a1a2e;border:1px solid #2e2e48;border-radius:10px;box-shadow:0 16px 40px rgba(0,0,0,.6);z-index:200;overflow:hidden;max-height:300px;overflow-y:auto}
+.custom-dd-list.open{display:block}
+.custom-dd-cat{font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#667eea;padding:12px 14px 5px;background:rgba(102,126,234,.06);border-top:1px solid #2a2a40}
+.custom-dd-cat:first-child{border-top:none}
+.custom-dd-item{padding:9px 18px;font-size:13px;color:#c0c0d0;cursor:pointer;transition:background .12s}
+.custom-dd-item:hover{background:rgba(102,126,234,.15);color:#fff}
 /* Scan progress screen */
 .wiz-scan{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:40px 20px;background:#0f0f1a;text-align:center}
 .wiz-scan-logo{font-size:26px;font-weight:800;color:#fff}
@@ -496,64 +518,82 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 
   <!-- Step 1: Resume -->
   <div id="wiz-1" class="wiz-screen">
-    <div class="wiz-card">
-      <div class="wiz-logo">&#127919; DataHunt IL</div>
-      <div>
-        <h2>Welcome!</h2>
-        <p class="wiz-sub" style="margin-top:6px">Find your next role across Israeli job boards — personalised to you.</p>
+    <div class="wiz-hero-wrap">
+      <div class="wiz-hero">
+        <div class="wiz-hero-badge">&#127919; DataHunt IL</div>
+        <div class="wiz-hero-title">Your next role,<br><span>found faster.</span></div>
+        <p class="wiz-hero-sub">Real-time job scraping across Israeli job boards — ranked and filtered to match you.</p>
       </div>
-      <h3>Upload your resume or paste your background</h3>
-      <label class="upload-zone" id="upload-zone" ondragover="event.preventDefault()" ondrop="handleDrop(event)">
-        <input type="file" id="resume-file" accept=".pdf,.docx" style="display:none" onchange="handleFileSelect(this)">
-        <div class="upload-icon">&#128196;</div>
-        <div class="upload-text" id="upload-text">Drop your CV here or <span class="upload-link" onclick="document.getElementById('resume-file').click();event.stopPropagation()">browse</span></div>
-        <div class="upload-hint">PDF or Word (.docx) &bull; max 5MB</div>
-        <div class="upload-status" id="upload-status"></div>
-      </label>
-      <div style="text-align:center;font-size:12px;color:#555;margin:-6px 0">or</div>
-      <textarea id="resume-input" class="wiz-textarea" placeholder="Paste your resume or describe your skills and experience...&#10;&#10;E.g. 2 years as BI Developer, strong Power BI and SQL, looking for data/analytics roles in Tel Aviv area."></textarea>
-      <div class="wiz-actions">
-        <span class="wiz-skip" onclick="goStep(2)">Skip for now</span>
-        <button class="wiz-btn" onclick="saveResumeAndNext()">Next &#8594;</button>
+      <div class="wiz-card">
+        <div>
+          <h2>Let's personalise your search</h2>
+          <p class="wiz-sub" style="margin-top:6px">Upload your CV so we can rank results by how well they match your background.</p>
+        </div>
+        <label class="upload-zone" id="upload-zone" ondragover="event.preventDefault()" ondrop="handleDrop(event)">
+          <input type="file" id="resume-file" accept=".pdf,.docx" style="display:none" onchange="handleFileSelect(this)">
+          <div class="upload-icon">&#128196;</div>
+          <div class="upload-text" id="upload-text">Drop your CV here or <span class="upload-link" onclick="document.getElementById('resume-file').click();event.stopPropagation()">browse</span></div>
+          <div class="upload-hint">PDF or Word (.docx) &bull; max 5MB</div>
+          <div class="upload-status" id="upload-status"></div>
+        </label>
+        <div style="display:flex;align-items:center;gap:10px;color:#333;font-size:12px"><div style="flex:1;height:1px;background:#2a2a3e"></div>or paste below<div style="flex:1;height:1px;background:#2a2a3e"></div></div>
+        <textarea id="resume-input" class="wiz-textarea" placeholder="Describe your skills and experience...&#10;E.g. 2 years as BI Developer, strong Power BI and SQL, looking for data/analytics roles in Tel Aviv."></textarea>
+        <div class="wiz-actions">
+          <span class="wiz-skip" onclick="goStep(2)">Skip for now</span>
+          <button class="wiz-btn" onclick="saveResumeAndNext()">Next &#8594;</button>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Step 2: Preferences -->
-  <div id="wiz-2" class="wiz-screen" style="display:none">
-    <div class="wiz-card">
+  <div id="wiz-2" class="wiz-screen" style="display:none;background:#0a0a14">
+    <div class="wiz-card wiz-card-step2" style="max-width:520px">
       <button class="wiz-back" onclick="goStep(1)">&#8592; Back</button>
-      <h2>What roles are you looking for?</h2>
-      <p class="wiz-sub">Pick from the dropdown — filters results and guides the scan.</p>
-      <div class="wiz-roles-area">
-        <div id="wiz-role-chips"></div>
-        <select class="role-select" id="wiz-role-select" onchange="addRoleFromSelect(this)">
-          <option value="">+ Add role...</option>
-          <optgroup label="Data &amp; BI">
-            <option>Data Analyst</option><option>BI Developer</option><option>BI Analyst</option>
-            <option>Analytics Engineer</option><option>Reporting Analyst</option>
-            <option>Business Intelligence Developer</option>
-          </optgroup>
-          <optgroup label="Data Science &amp; AI">
-            <option>Data Scientist</option><option>Machine Learning Engineer</option>
-            <option>AI Analyst</option><option>AI Engineer</option><option>NLP Engineer</option>
-          </optgroup>
-          <optgroup label="Engineering">
-            <option>Data Engineer</option><option>Software Developer</option>
-            <option>Software Engineer</option><option>Frontend Developer</option>
-            <option>Backend Developer</option><option>Full Stack Developer</option>
-            <option>DevOps Engineer</option><option>Python Developer</option>
-            <option>Java Developer</option>
-          </optgroup>
-          <optgroup label="Product &amp; Design">
-            <option>Product Manager</option><option>Business Analyst</option>
-            <option>UX Designer</option><option>UI Designer</option><option>QA Engineer</option>
-          </optgroup>
-        </select>
-        <button class="save-roles-btn" onclick="clearRoles()" style="background:#2a1a1a;border-color:#7f1d1d;color:#f87171">Clear All</button>
+      <div>
+        <h2>What roles are you looking for?</h2>
+        <p class="wiz-sub" style="margin-top:6px">Select from the list — these filter your results and guide the scan.</p>
+      </div>
+      <div class="wiz-roles-area" id="wiz-roles-area">
+        <div id="wiz-role-chips" style="display:contents"></div>
+        <div class="custom-dd-wrap">
+          <button class="custom-dd-btn" onclick="toggleDropdown(event)">&#43; Add role</button>
+          <div class="custom-dd-list" id="role-dd-list">
+            <div class="custom-dd-cat">Data &amp; BI</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Data Analyst')">Data Analyst</div>
+            <div class="custom-dd-item" onclick="addRoleItem('BI Developer')">BI Developer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('BI Analyst')">BI Analyst</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Analytics Engineer')">Analytics Engineer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Reporting Analyst')">Reporting Analyst</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Business Intelligence Developer')">Business Intelligence Developer</div>
+            <div class="custom-dd-cat">Data Science &amp; AI</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Data Scientist')">Data Scientist</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Machine Learning Engineer')">Machine Learning Engineer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('AI Analyst')">AI Analyst</div>
+            <div class="custom-dd-item" onclick="addRoleItem('AI Engineer')">AI Engineer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('NLP Engineer')">NLP Engineer</div>
+            <div class="custom-dd-cat">Engineering</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Data Engineer')">Data Engineer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Software Developer')">Software Developer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Software Engineer')">Software Engineer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Frontend Developer')">Frontend Developer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Backend Developer')">Backend Developer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Full Stack Developer')">Full Stack Developer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('DevOps Engineer')">DevOps Engineer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Python Developer')">Python Developer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Java Developer')">Java Developer</div>
+            <div class="custom-dd-cat">Product &amp; Design</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Product Manager')">Product Manager</div>
+            <div class="custom-dd-item" onclick="addRoleItem('Business Analyst')">Business Analyst</div>
+            <div class="custom-dd-item" onclick="addRoleItem('UX Designer')">UX Designer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('UI Designer')">UI Designer</div>
+            <div class="custom-dd-item" onclick="addRoleItem('QA Engineer')">QA Engineer</div>
+          </div>
+        </div>
+        <button class="save-roles-btn" onclick="clearRoles()" style="background:#2a1a1a;border-color:#7f1d1d;color:#f87171;flex-shrink:0">Clear All</button>
       </div>
       <h3>Any extra preferences?</h3>
-      <textarea id="notes-input" class="wiz-textarea" style="min-height:80px" placeholder="E.g. prefer Tel Aviv / Ramat Gan area, not heavy ETL, Python a plus, open to hybrid..."></textarea>
+      <textarea id="notes-input" class="wiz-textarea" style="min-height:78px" placeholder="E.g. prefer Tel Aviv / Ramat Gan, not heavy ETL, Python automation a plus, hybrid ok..."></textarea>
       <div class="wiz-actions">
         <button class="wiz-btn-ghost" onclick="goResults()" id="view-existing-btn" style="display:none">View existing results</button>
         <button class="wiz-btn" onclick="wizStartScan()">&#128269; Start Scan</button>
@@ -840,12 +880,26 @@ function renderRoleChips(){
   buildLinks();
 }
 
-function addRoleFromSelect(sel){
-  const val=sel.value; sel.value='';
+function toggleDropdown(e){
+  e.stopPropagation();
+  document.getElementById('role-dd-list').classList.toggle('open');
+}
+function addRoleItem(val){
+  document.getElementById('role-dd-list').classList.remove('open');
   if(!val) return;
   if(!activeRoles.map(r=>r.toLowerCase()).includes(val.toLowerCase()))
     activeRoles.push(val);
   renderRoleChips(); renderJobs();
+}
+document.addEventListener('click',()=>{
+  const dd=document.getElementById('role-dd-list');
+  if(dd) dd.classList.remove('open');
+});
+// keep old select handler for results filters if present
+function addRoleFromSelect(sel){
+  const val=sel.value; sel.value='';
+  if(!val) return;
+  addRoleItem(val);
 }
 
 function removeRole(i){
