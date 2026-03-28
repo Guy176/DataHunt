@@ -112,6 +112,56 @@ def api_stats():
     })
 
 
+@app.route("/api/upload-resume", methods=["POST"])
+def api_upload_resume():
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"ok": False, "error": "No file"})
+
+    fname = f.filename.lower()
+    text  = ""
+
+    try:
+        if fname.endswith(".pdf"):
+            try:
+                import pdfplumber, io
+                with pdfplumber.open(io.BytesIO(f.read())) as pdf:
+                    text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+            except ImportError:
+                return jsonify({"ok": False, "error": "pdfplumber not installed"})
+
+        elif fname.endswith(".docx"):
+            try:
+                import docx, io
+                doc  = docx.Document(io.BytesIO(f.read()))
+                text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            except ImportError:
+                return jsonify({"ok": False, "error": "python-docx not installed"})
+
+        else:
+            return jsonify({"ok": False, "error": "Only PDF and DOCX files are supported"})
+
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+    text = text.strip()[:8000]
+    if not text:
+        return jsonify({"ok": False, "error": "Could not extract text from file"})
+
+    # Save to config
+    payload = {}
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as cf:
+            payload = json.load(cf)
+    except Exception:
+        pass
+    payload["resume_text"] = text
+    with open(CONFIG_FILE, "w", encoding="utf-8") as cf:
+        json.dump(payload, cf, ensure_ascii=False, indent=2)
+
+    return jsonify({"ok": True, "text": text})
+
+
 @app.route("/api/config", methods=["GET"])
 def api_config_get():
     try:
@@ -403,6 +453,17 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 .wiz-progress-fill{height:100%;background:linear-gradient(90deg,#667eea,#a78bfa);border-radius:99px;width:5%;transition:width .7s ease}
 .wiz-stage{font-size:13px;color:#888;min-height:20px}
 .wiz-found{font-size:12px;color:#555}
+/* file upload zone */
+.upload-zone{display:flex;flex-direction:column;align-items:center;gap:6px;padding:20px;border:2px dashed #2e2e48;border-radius:10px;cursor:pointer;transition:border-color .2s,background .2s;background:#1a1a2a;text-align:center}
+.upload-zone:hover,.upload-zone.drag-over{border-color:#667eea;background:#1e1e38}
+.upload-icon{font-size:28px;line-height:1}
+.upload-text{font-size:13px;color:#aaa}
+.upload-link{color:#a78bfa;cursor:pointer;text-decoration:underline}
+.upload-hint{font-size:11px;color:#555}
+.upload-status{font-size:12px;min-height:16px;font-weight:600}
+.upload-status.ok{color:#4ade80}
+.upload-status.err{color:#f87171}
+.upload-status.loading{color:#facc15}
 /* prefs button in results header */
 .prefs-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.85);padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
 .prefs-btn:hover{background:rgba(255,255,255,.22);color:#fff}
@@ -441,7 +502,15 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
         <h2>Welcome!</h2>
         <p class="wiz-sub" style="margin-top:6px">Find your next role across Israeli job boards — personalised to you.</p>
       </div>
-      <h3>Tell us about your background</h3>
+      <h3>Upload your resume or paste your background</h3>
+      <label class="upload-zone" id="upload-zone" ondragover="event.preventDefault()" ondrop="handleDrop(event)">
+        <input type="file" id="resume-file" accept=".pdf,.docx" style="display:none" onchange="handleFileSelect(this)">
+        <div class="upload-icon">&#128196;</div>
+        <div class="upload-text" id="upload-text">Drop your CV here or <span class="upload-link" onclick="document.getElementById('resume-file').click();event.stopPropagation()">browse</span></div>
+        <div class="upload-hint">PDF or Word (.docx) &bull; max 5MB</div>
+        <div class="upload-status" id="upload-status"></div>
+      </label>
+      <div style="text-align:center;font-size:12px;color:#555;margin:-6px 0">or</div>
       <textarea id="resume-input" class="wiz-textarea" placeholder="Paste your resume or describe your skills and experience...&#10;&#10;E.g. 2 years as BI Developer, strong Power BI and SQL, looking for data/analytics roles in Tel Aviv area."></textarea>
       <div class="wiz-actions">
         <span class="wiz-skip" onclick="goStep(2)">Skip for now</span>
@@ -645,6 +714,53 @@ function applyFilters(jobs){
     if(q){const hay=((j.title||'')+' '+(j.company||'')).toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
+}
+
+// ── Resume file upload ────────────────────────────────────────────────────────
+function handleFileSelect(input){
+  if(input.files[0]) uploadResume(input.files[0]);
+}
+function handleDrop(e){
+  e.preventDefault();
+  document.getElementById('upload-zone').classList.remove('drag-over');
+  const file=e.dataTransfer.files[0];
+  if(file) uploadResume(file);
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  const zone=document.getElementById('upload-zone');
+  if(zone){
+    zone.addEventListener('dragover',()=>zone.classList.add('drag-over'));
+    zone.addEventListener('dragleave',()=>zone.classList.remove('drag-over'));
+  }
+});
+
+async function uploadResume(file){
+  const status=document.getElementById('upload-status');
+  const text=document.getElementById('upload-text');
+  if(file.size>5*1024*1024){status.className='upload-status err';status.textContent='File too large (max 5MB)';return;}
+  if(!file.name.match(/\.(pdf|docx)$/i)){status.className='upload-status err';status.textContent='Only PDF or .docx files';return;}
+
+  status.className='upload-status loading';
+  status.textContent='Extracting text...';
+  text.innerHTML='<span style="color:#888">'+h(file.name)+'</span>';
+
+  const fd=new FormData();
+  fd.append('file',file);
+  try{
+    const r=await fetch('/api/upload-resume',{method:'POST',body:fd});
+    const d=await r.json();
+    if(d.ok){
+      document.getElementById('resume-input').value=d.text;
+      status.className='upload-status ok';
+      status.textContent='Resume loaded — '+d.text.split(' ').length+' words extracted';
+    } else {
+      status.className='upload-status err';
+      status.textContent=d.error||'Upload failed';
+    }
+  }catch{
+    status.className='upload-status err';
+    status.textContent='Upload failed — try pasting text instead';
+  }
 }
 
 // ── Wizard navigation ─────────────────────────────────────────────────────────
