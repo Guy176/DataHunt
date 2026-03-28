@@ -23,7 +23,13 @@ JOBS_FILE      = os.path.join(DATA_DIR, "jobs_data.json")
 CACHE_FILE     = os.path.join(DATA_DIR, "datahunt_cache.json")
 SCRAPER_FILE   = os.path.join(BASE_DIR, "datahunt_scraper.py")
 PROGRESS_FILE  = os.path.join(DATA_DIR, "scan_progress.json")
+CONFIG_FILE    = os.path.join(DATA_DIR, "user_config.json")
 os.makedirs(DATA_DIR, exist_ok=True)
+
+DEFAULT_ROLES = [
+    "Data Analyst", "BI Analyst", "BI Developer", "Junior Data Scientist",
+    "AI Analyst", "Business Analyst", "Analytics Engineer",
+]
 
 _status = {"running": False, "message": "Idle"}
 
@@ -104,6 +110,26 @@ def api_stats():
         "last_run":  cache.get("last_run"),
         "scraper":   _status,
     })
+
+
+@app.route("/api/config", methods=["GET"])
+def api_config_get():
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({"roles": DEFAULT_ROLES})
+
+
+@app.route("/api/config", methods=["POST"])
+def api_config_post():
+    data  = request.get_json(silent=True) or {}
+    roles = [r.strip() for r in data.get("roles", []) if r.strip()]
+    if not roles:
+        return jsonify({"ok": False, "message": "No roles provided"})
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump({"roles": roles}, f, ensure_ascii=False, indent=2)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/scan", methods=["POST"])
@@ -308,6 +334,17 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 .rel-med{background:#2a2a10;color:#facc15;border:1px solid #854d0e}
 .rel-low{background:#2a1a1a;color:#f87171;border:1px solid #7f1d1d}
 
+/* role chips */
+.role-chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center;flex:1}
+.role-chip{display:inline-flex;align-items:center;gap:3px;background:#1e2d4a;border:1px solid #3a5a9a;color:#7eb4f0;padding:3px 6px 3px 10px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap}
+.chip-x{background:none;border:none;color:#7eb4f0;cursor:pointer;font-size:15px;line-height:1;padding:0 2px;opacity:.7;transition:opacity .15s}
+.chip-x:hover{opacity:1;color:#fff}
+.role-input{background:#1e1e30;border:1px solid #2e2e48;color:#e0e0e0;padding:5px 10px;border-radius:6px;font-size:12px;width:140px;outline:none;flex-shrink:0}
+.role-input:focus{border-color:#667eea}
+.role-input::placeholder{color:#555}
+.save-roles-btn{background:#1e2d4a;border:1px solid #3a5a9a;color:#7eb4f0;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0}
+.save-roles-btn:hover{background:#2a3d6a;border-color:#667eea;color:#fff}
+
 /* apply button */
 .apply-link{display:inline-flex;align-items:center;justify-content:center;gap:6px;color:#fff;font-size:14px;font-weight:700;text-decoration:none;padding:11px 22px;border-radius:8px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);transition:all .18s;width:100%}
 .apply-link:hover{background:linear-gradient(135deg,#7c8fef,#8a5db5);transform:translateY(-1px);box-shadow:0 4px 16px rgba(102,126,234,.4)}
@@ -400,6 +437,12 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
     <button class="filter-btn active" onclick="setFilter('view','list',this)">&#9776; List</button>
     <button class="filter-btn" onclick="setFilter('view','grid',this)">&#9783; Grid</button>
   </div>
+  <div class="filter-row" style="flex-wrap:wrap;gap:6px">
+    <span class="filter-label">Roles</span>
+    <div class="role-chips" id="role-chips"></div>
+    <input class="role-input" id="role-input" type="text" placeholder="Add role..." onkeydown="if(event.key==='Enter'){addRole();event.preventDefault()}">
+    <button class="save-roles-btn" onclick="saveRoles()">&#128190; Save &amp; Apply</button>
+  </div>
   <input class="search-box" id="search-input" type="text" placeholder="&#128269; Search title or company..." oninput="renderJobs()">
 </div>
 
@@ -423,11 +466,8 @@ let timeFilter='all', sourceFilter='all', sortMode='relevance', viewMode='list';
 let pollInterval = null;
 const expandedCards = new Set();
 const loadedDescs  = new Map();
+let activeRoles = [];
 
-const ROLES = [
-  "Data Analyst","BI Analyst","BI Developer","Junior Data Scientist",
-  "AI Analyst","Business Analyst","Analytics Engineer"
-];
 const SOURCES = [
   {n:"LinkedIn", u:r=>`https://www.linkedin.com/jobs/search/?keywords=${enc(r)}&location=Israel&f_E=2&sortBy=DD`},
   {n:"Jobmaster",u:r=>`https://www.jobmaster.co.il/jobs/?q=${enc(r)}`},
@@ -482,9 +522,58 @@ function applyFilters(jobs){
       if(timeFilter==='week' &&dh>168) return false;
     }
     if(sourceFilter!=='all'&&(j.source||'').toLowerCase()!==sourceFilter.toLowerCase()) return false;
+    if(activeRoles.length>0){
+      const t=(j.title||'').toLowerCase();
+      if(!activeRoles.some(r=>t.includes(r.toLowerCase()))) return false;
+    }
     if(q){const hay=((j.title||'')+' '+(j.company||'')).toLowerCase();if(!hay.includes(q))return false;}
     return true;
   });
+}
+
+// ── Role chip management ──────────────────────────────────────────────────────
+function renderRoleChips(){
+  document.getElementById('role-chips').innerHTML=activeRoles.map((r,i)=>
+    `<span class="role-chip">${h(r)}<button class="chip-x" onclick="removeRole(${i})">&#215;</button></span>`
+  ).join('');
+  buildLinks();
+}
+
+function addRole(){
+  const inp=document.getElementById('role-input');
+  const val=inp.value.trim();
+  if(!val) return;
+  if(!activeRoles.map(r=>r.toLowerCase()).includes(val.toLowerCase()))
+    activeRoles.push(val);
+  inp.value='';
+  renderRoleChips();
+  renderJobs();
+}
+
+function removeRole(i){
+  activeRoles.splice(i,1);
+  renderRoleChips();
+  renderJobs();
+}
+
+async function saveRoles(){
+  try{
+    const r=await fetch('/api/config',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({roles:activeRoles})
+    });
+    const d=await r.json();
+    showToast(d.ok?'Roles saved — next scan will use these roles':d.message||'Error saving');
+  }catch{showToast('Could not save roles')}
+}
+
+async function loadConfig(){
+  try{
+    const d=await (await fetch('/api/config')).json();
+    activeRoles=d.roles||[];
+    renderRoleChips();
+  }catch{}
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -649,14 +738,15 @@ function showToast(msg){
 }
 
 function buildLinks(){
+  const roles=activeRoles.length>0?activeRoles:['Data Analyst','BI Developer','BI Analyst'];
   document.getElementById('links-grid').innerHTML=
-    ROLES.flatMap(r=>SOURCES.map(s=>
+    roles.flatMap(r=>SOURCES.map(s=>
       `<a class="search-link" href="${s.u(r)}" target="_blank" rel="noopener">${s.n}: ${h(r)}</a>`
     )).join('');
 }
 
 // Init
-loadJobs(); loadStats(); buildLinks();
+loadConfig().then(()=>{ loadJobs(); loadStats(); });
 
 </script>
 </body>

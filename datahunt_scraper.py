@@ -52,6 +52,17 @@ CACHE_FILE     = os.path.join(_DATA_DIR, "datahunt_cache.json")
 OUTPUT_FILE    = os.path.join(_DATA_DIR, "datahunt_results.html")
 JOBS_FILE      = os.path.join(_DATA_DIR, "jobs_data.json")
 PROGRESS_FILE  = os.path.join(_DATA_DIR, "scan_progress.json")
+CONFIG_FILE    = os.path.join(_DATA_DIR, "user_config.json")
+
+# Override ROLES from user config if present
+try:
+    with open(CONFIG_FILE, encoding="utf-8") as _cf:
+        _cfg = json.load(_cf)
+    if _cfg.get("roles"):
+        ROLES = _cfg["roles"]
+        print(f"Using custom roles from config: {ROLES}")
+except Exception:
+    pass  # use defaults
 os.makedirs(_DATA_DIR, exist_ok=True)
 
 def _write_progress(pct, stage, found=0):
