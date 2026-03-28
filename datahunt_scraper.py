@@ -185,6 +185,9 @@ DATA_TITLE_BLACKLIST = [
 
 def is_data_relevant(title):
     t = title.lower()
+    # Custom roles always pass — user explicitly requested them
+    if any(role.lower() in t for role in ROLES):
+        return True
     if not any(kw in t for kw in DATA_TITLE_WHITELIST):
         return False
     if any(kw in t for kw in DATA_TITLE_BLACKLIST):

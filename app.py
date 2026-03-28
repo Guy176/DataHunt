@@ -125,10 +125,21 @@ def api_config_get():
 def api_config_post():
     data  = request.get_json(silent=True) or {}
     roles = [r.strip() for r in data.get("roles", []) if r.strip()]
-    if not roles:
-        return jsonify({"ok": False, "message": "No roles provided"})
+    payload = {}
+    # Preserve existing config fields
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception:
+        pass
+    if roles:
+        payload["roles"] = roles
+    if "resume_text" in data:
+        payload["resume_text"] = data["resume_text"]
+    if "notes" in data:
+        payload["notes"] = data["notes"]
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump({"roles": roles}, f, ensure_ascii=False, indent=2)
+        json.dump(payload, f, ensure_ascii=False, indent=2)
     return jsonify({"ok": True})
 
 
@@ -364,6 +375,38 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1e1e30;border:1px solid #667eea;color:#e0e0e0;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;white-space:nowrap}
 .toast.show{opacity:1}
 
+/* ── Wizard ── */
+.wiz-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:#0f0f1a}
+.wiz-card{background:#161625;border:1px solid #2e2e48;border-radius:16px;padding:28px 24px;width:100%;max-width:500px;display:flex;flex-direction:column;gap:16px}
+.wiz-logo{font-size:22px;font-weight:800;color:#fff;text-align:center;padding-bottom:4px}
+.wiz-card h2{font-size:20px;font-weight:700;color:#fff}
+.wiz-card h3{font-size:13px;font-weight:600;color:#888;margin-top:6px}
+.wiz-sub{font-size:13px;color:#888;line-height:1.5}
+.wiz-textarea{width:100%;background:#1e1e30;border:1px solid #2e2e48;color:#e0e0e0;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;resize:vertical;min-height:110px;outline:none;font-family:inherit;transition:border-color .15s}
+.wiz-textarea:focus{border-color:#667eea}
+.wiz-textarea::placeholder{color:#555}
+.wiz-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin-top:4px}
+.wiz-btn{background:linear-gradient(135deg,#667eea,#764ba2);border:none;color:#fff;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:all .18s}
+.wiz-btn:hover{opacity:.9;transform:translateY(-1px)}
+.wiz-btn-ghost{background:transparent;border:1px solid #2e2e48;color:#888;padding:11px 18px;border-radius:8px;font-size:13px;cursor:pointer;transition:all .18s}
+.wiz-btn-ghost:hover{border-color:#667eea;color:#a78bfa}
+.wiz-skip{color:#555;font-size:13px;cursor:pointer;padding:10px;transition:color .15s}
+.wiz-skip:hover{color:#aaa}
+.wiz-back{background:none;border:none;color:#777;font-size:13px;cursor:pointer;padding:0 0 4px;text-align:left;transition:color .15s}
+.wiz-back:hover{color:#fff}
+.wiz-roles-area{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;background:#1e1e30;border:1px solid #2e2e48;border-radius:8px;min-height:46px}
+/* Scan progress screen */
+.wiz-scan{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:40px 20px;background:#0f0f1a;text-align:center}
+.wiz-scan-logo{font-size:26px;font-weight:800;color:#fff}
+.wiz-scan h2{font-size:17px;color:#b0b0c0;font-weight:500}
+.wiz-progress-track{width:100%;max-width:440px;background:#1e1e30;border-radius:99px;height:8px;overflow:hidden;border:1px solid #2e2e48}
+.wiz-progress-fill{height:100%;background:linear-gradient(90deg,#667eea,#a78bfa);border-radius:99px;width:5%;transition:width .7s ease}
+.wiz-stage{font-size:13px;color:#888;min-height:20px}
+.wiz-found{font-size:12px;color:#555}
+/* prefs button in results header */
+.prefs-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.85);padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
+.prefs-btn:hover{background:rgba(255,255,255,.22);color:#fff}
+
 /* ═══════════════ DESKTOP ENHANCEMENTS ═══════════════ */
 @media(min-width:700px){
   .header{flex-direction:row;align-items:center;padding:22px 40px;gap:20px}
@@ -387,6 +430,82 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 </head>
 <body>
 
+<!-- ══ WIZARD ══ -->
+<div id="wiz">
+
+  <!-- Step 1: Resume -->
+  <div id="wiz-1" class="wiz-screen">
+    <div class="wiz-card">
+      <div class="wiz-logo">&#127919; DataHunt IL</div>
+      <div>
+        <h2>Welcome!</h2>
+        <p class="wiz-sub" style="margin-top:6px">Find your next role across Israeli job boards — personalised to you.</p>
+      </div>
+      <h3>Tell us about your background</h3>
+      <textarea id="resume-input" class="wiz-textarea" placeholder="Paste your resume or describe your skills and experience...&#10;&#10;E.g. 2 years as BI Developer, strong Power BI and SQL, looking for data/analytics roles in Tel Aviv area."></textarea>
+      <div class="wiz-actions">
+        <span class="wiz-skip" onclick="goStep(2)">Skip for now</span>
+        <button class="wiz-btn" onclick="saveResumeAndNext()">Next &#8594;</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Preferences -->
+  <div id="wiz-2" class="wiz-screen" style="display:none">
+    <div class="wiz-card">
+      <button class="wiz-back" onclick="goStep(1)">&#8592; Back</button>
+      <h2>What roles are you looking for?</h2>
+      <p class="wiz-sub">Pick from the dropdown — filters results and guides the scan.</p>
+      <div class="wiz-roles-area">
+        <div id="wiz-role-chips"></div>
+        <select class="role-select" id="wiz-role-select" onchange="addRoleFromSelect(this)">
+          <option value="">+ Add role...</option>
+          <optgroup label="Data &amp; BI">
+            <option>Data Analyst</option><option>BI Developer</option><option>BI Analyst</option>
+            <option>Analytics Engineer</option><option>Reporting Analyst</option>
+            <option>Business Intelligence Developer</option>
+          </optgroup>
+          <optgroup label="Data Science &amp; AI">
+            <option>Data Scientist</option><option>Machine Learning Engineer</option>
+            <option>AI Analyst</option><option>AI Engineer</option><option>NLP Engineer</option>
+          </optgroup>
+          <optgroup label="Engineering">
+            <option>Data Engineer</option><option>Software Developer</option>
+            <option>Software Engineer</option><option>Frontend Developer</option>
+            <option>Backend Developer</option><option>Full Stack Developer</option>
+            <option>DevOps Engineer</option><option>Python Developer</option>
+            <option>Java Developer</option>
+          </optgroup>
+          <optgroup label="Product &amp; Design">
+            <option>Product Manager</option><option>Business Analyst</option>
+            <option>UX Designer</option><option>UI Designer</option><option>QA Engineer</option>
+          </optgroup>
+        </select>
+        <button class="save-roles-btn" onclick="clearRoles()" style="background:#2a1a1a;border-color:#7f1d1d;color:#f87171">Clear All</button>
+      </div>
+      <h3>Any extra preferences?</h3>
+      <textarea id="notes-input" class="wiz-textarea" style="min-height:80px" placeholder="E.g. prefer Tel Aviv / Ramat Gan area, not heavy ETL, Python a plus, open to hybrid..."></textarea>
+      <div class="wiz-actions">
+        <button class="wiz-btn-ghost" onclick="goResults()" id="view-existing-btn" style="display:none">View existing results</button>
+        <button class="wiz-btn" onclick="wizStartScan()">&#128269; Start Scan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Scanning -->
+  <div id="wiz-3" class="wiz-scan" style="display:none">
+    <div class="wiz-scan-logo">&#127919; DataHunt IL</div>
+    <h2>Scanning job boards...</h2>
+    <div class="wiz-progress-track"><div class="wiz-progress-fill" id="wiz-fill"></div></div>
+    <div class="wiz-stage" id="wiz-stage">Starting...</div>
+    <div class="wiz-found" id="wiz-found"></div>
+  </div>
+
+</div><!-- /wiz -->
+
+<!-- ══ RESULTS ══ -->
+<div id="results-wrap" style="display:none">
+
 <!-- HEADER -->
 <div class="header">
   <div class="header-left">
@@ -394,6 +513,7 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
     <p id="last-run-text">Loading...</p>
   </div>
   <div class="header-right">
+    <button class="prefs-btn" onclick="goStep(2);showWizard()">&#9881; Preferences</button>
     <div class="progress-wrap" id="progress-wrap">
       <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
       <div class="progress-stage" id="progress-stage"></div>
@@ -437,48 +557,6 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
     <button class="filter-btn active" onclick="setFilter('view','list',this)">&#9776; List</button>
     <button class="filter-btn" onclick="setFilter('view','grid',this)">&#9783; Grid</button>
   </div>
-  <div class="filter-row" style="flex-wrap:wrap;gap:6px">
-    <span class="filter-label">Roles</span>
-    <div class="role-chips" id="role-chips"></div>
-    <select class="role-select" id="role-select" onchange="addRoleFromSelect(this)">
-      <option value="">+ Add role...</option>
-      <optgroup label="Data &amp; BI">
-        <option>Data Analyst</option>
-        <option>BI Developer</option>
-        <option>BI Analyst</option>
-        <option>Analytics Engineer</option>
-        <option>Reporting Analyst</option>
-        <option>Business Intelligence Developer</option>
-      </optgroup>
-      <optgroup label="Data Science &amp; AI">
-        <option>Data Scientist</option>
-        <option>Machine Learning Engineer</option>
-        <option>AI Analyst</option>
-        <option>AI Engineer</option>
-        <option>NLP Engineer</option>
-      </optgroup>
-      <optgroup label="Engineering">
-        <option>Data Engineer</option>
-        <option>Software Developer</option>
-        <option>Software Engineer</option>
-        <option>Frontend Developer</option>
-        <option>Backend Developer</option>
-        <option>Full Stack Developer</option>
-        <option>DevOps Engineer</option>
-        <option>Python Developer</option>
-        <option>Java Developer</option>
-      </optgroup>
-      <optgroup label="Product &amp; Design">
-        <option>Product Manager</option>
-        <option>Business Analyst</option>
-        <option>UX Designer</option>
-        <option>UI Designer</option>
-        <option>QA Engineer</option>
-      </optgroup>
-    </select>
-    <button class="save-roles-btn" onclick="clearRoles()" style="background:#2a1a1a;border-color:#7f1d1d;color:#f87171">Clear All</button>
-    <button class="save-roles-btn" onclick="saveRoles()">&#128190; Save &amp; Apply</button>
-  </div>
   <input class="search-box" id="search-input" type="text" placeholder="&#128269; Search title or company..." oninput="renderJobs()">
 </div>
 
@@ -495,6 +573,8 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 </div>
 
 <div class="toast" id="toast"></div>
+
+</div><!-- /results-wrap -->
 
 <script>
 let allJobs = [];
@@ -567,46 +647,99 @@ function applyFilters(jobs){
   });
 }
 
+// ── Wizard navigation ─────────────────────────────────────────────────────────
+function goStep(n){
+  [1,2,3].forEach(i=>{
+    const el=document.getElementById('wiz-'+i);
+    if(el) el.style.display=i===n?'':' none';
+  });
+  // fix: proper show/hide
+  document.getElementById('wiz-1').style.display=n===1?'':'none';
+  document.getElementById('wiz-2').style.display=n===2?'':'none';
+  document.getElementById('wiz-3').style.display=n===3?'flex':'none';
+}
+
+function showWizard(step){
+  document.getElementById('wiz').style.display='';
+  document.getElementById('results-wrap').style.display='none';
+  goStep(step||1);
+}
+
+function goResults(){
+  document.getElementById('wiz').style.display='none';
+  document.getElementById('results-wrap').style.display='';
+  localStorage.setItem('datahunt_done','1');
+  loadJobs(); loadStats();
+}
+
+async function saveResumeAndNext(){
+  const resume=document.getElementById('resume-input').value.trim();
+  if(resume){
+    await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({resume_text:resume})});
+  }
+  goStep(2);
+}
+
+async function wizStartScan(){
+  const notes=document.getElementById('notes-input').value.trim();
+  await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({roles:activeRoles,notes})});
+
+  goStep(3);
+  document.getElementById('wiz-fill').style.width='5%';
+  document.getElementById('wiz-stage').textContent='Starting...';
+  document.getElementById('wiz-found').textContent='';
+
+  try{
+    const r=await fetch('/api/scan',{method:'POST'});
+    const d=await r.json();
+    if(!d.ok){showToast(d.message||'Already running — showing existing results');goResults();return;}
+  }catch{showToast('Could not start scan');goResults();return;}
+
+  const poll=setInterval(async()=>{
+    try{
+      const st=await (await fetch('/api/scan/status')).json();
+      if(st.pct) document.getElementById('wiz-fill').style.width=st.pct+'%';
+      if(st.stage) document.getElementById('wiz-stage').textContent=st.stage;
+      if(st.found) document.getElementById('wiz-found').textContent=st.found+' jobs found so far';
+      if(!st.running){
+        clearInterval(poll);
+        document.getElementById('wiz-fill').style.width='100%';
+        document.getElementById('wiz-stage').textContent='Done!';
+        setTimeout(()=>goResults(),800);
+      }
+    }catch{}
+  },2500);
+}
+
 // ── Role chip management ──────────────────────────────────────────────────────
 function renderRoleChips(){
-  document.getElementById('role-chips').innerHTML=activeRoles.map((r,i)=>
+  const html=activeRoles.map((r,i)=>
     `<span class="role-chip">${h(r)}<button class="chip-x" onclick="removeRole(${i})">&#215;</button></span>`
   ).join('');
+  // render in wizard and results (if they exist)
+  const wc=document.getElementById('wiz-role-chips');
+  if(wc) wc.innerHTML=html;
   buildLinks();
 }
 
 function addRoleFromSelect(sel){
-  const val=sel.value;
-  sel.value='';
+  const val=sel.value; sel.value='';
   if(!val) return;
   if(!activeRoles.map(r=>r.toLowerCase()).includes(val.toLowerCase()))
     activeRoles.push(val);
-  renderRoleChips();
-  renderJobs();
+  renderRoleChips(); renderJobs();
 }
 
 function removeRole(i){
   activeRoles.splice(i,1);
-  renderRoleChips();
-  renderJobs();
+  renderRoleChips(); renderJobs();
 }
 
 function clearRoles(){
   activeRoles=[];
-  renderRoleChips();
-  renderJobs();
-}
-
-async function saveRoles(){
-  try{
-    const r=await fetch('/api/config',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({roles:activeRoles})
-    });
-    const d=await r.json();
-    showToast(d.ok?'Roles saved — next scan will use these roles':d.message||'Error saving');
-  }catch{showToast('Could not save roles')}
+  renderRoleChips(); renderJobs();
 }
 
 async function loadConfig(){
@@ -614,6 +747,8 @@ async function loadConfig(){
     const d=await (await fetch('/api/config')).json();
     activeRoles=d.roles||[];
     renderRoleChips();
+    if(d.resume_text) document.getElementById('resume-input').value=d.resume_text;
+    if(d.notes) document.getElementById('notes-input').value=d.notes;
   }catch{}
 }
 
@@ -780,14 +915,39 @@ function showToast(msg){
 
 function buildLinks(){
   const roles=activeRoles.length>0?activeRoles:['Data Analyst','BI Developer','BI Analyst'];
-  document.getElementById('links-grid').innerHTML=
-    roles.flatMap(r=>SOURCES.map(s=>
-      `<a class="search-link" href="${s.u(r)}" target="_blank" rel="noopener">${s.n}: ${h(r)}</a>`
-    )).join('');
+  const el=document.getElementById('links-grid');
+  if(el) el.innerHTML=roles.flatMap(r=>SOURCES.map(s=>
+    `<a class="search-link" href="${s.u(r)}" target="_blank" rel="noopener">${s.n}: ${h(r)}</a>`
+  )).join('');
 }
 
-// Init
-loadConfig().then(()=>{ loadJobs(); loadStats(); });
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init(){
+  await loadConfig();
+  const done=localStorage.getItem('datahunt_done');
+  if(done){
+    // Returning user — check if jobs exist
+    const jobs=await (await fetch('/api/jobs')).json();
+    if(jobs.length>0){
+      allJobs=jobs; renderJobs(); loadStats();
+      goResults();
+      // Show "View existing results" button if they land on step 2
+      const vb=document.getElementById('view-existing-btn');
+      if(vb) vb.style.display='';
+    } else {
+      showWizard(2);
+    }
+  } else {
+    showWizard(1);
+  }
+  // Always show view-existing if jobs available
+  fetch('/api/jobs').then(r=>r.json()).then(jobs=>{
+    const vb=document.getElementById('view-existing-btn');
+    if(vb&&jobs.length>0) vb.style.display='';
+  });
+}
+
+init();
 
 </script>
 </body>
