@@ -198,37 +198,37 @@ def score_job(job):
 
     # ── Role fit (mutually exclusive, highest match wins) ─────────────────────
     role_pts = 0
-    if any(t in title for t in ["bi developer", "bi analyst",
-                                  "business intelligence developer",
-                                  "business intelligence analyst"]):
-        role_pts = 55
+    if any(t in title for t in ["bi developer", "business intelligence developer"]):
+        role_pts = 58   # top preference
+    elif any(t in title for t in ["bi analyst", "business intelligence analyst"]):
+        role_pts = 53
     elif "power bi" in title or "powerbi" in title:
         role_pts = 52
     elif "analytics engineer" in title:
-        role_pts = 48
+        role_pts = 47
     elif "data analyst" in title or "analyst data" in title:
-        role_pts = 45
+        role_pts = 43
     elif "reporting analyst" in title or "report analyst" in title:
-        role_pts = 40
-    elif "ai analyst" in title:
         role_pts = 38
+    elif "ai analyst" in title:
+        role_pts = 36
     elif "business analyst" in title:
-        role_pts = 28
+        role_pts = 26
     elif "data engineer" in title:
-        role_pts = 22
+        role_pts = 20
     elif "data scientist" in title:
-        role_pts = 15
+        role_pts = 14
     elif "analyst" in title:
-        role_pts = 25
+        role_pts = 24
 
     # ── Tech bonus (capped at 30) ─────────────────────────────────────────────
     tech = 0
     if "power bi" in haystack or "powerbi" in haystack: tech += 20
     if "tableau"  in haystack:                           tech += 15
-    if "sql"      in haystack:                           tech += 8
-    if "python"   in haystack:                           tech += 6
+    if "sql"      in haystack:                           tech += 10  # SQL > Python
+    if "python"   in haystack:                           tech += 5
     if any(t in haystack for t in ["ssis", "etl", "dwh", "data warehouse"]): tech += 5
-    if any(t in haystack for t in ["dbt", "looker"]):   tech += 5
+    if any(t in haystack for t in ["dbt", "looker"]):   tech += 4
     tech = min(tech, 30)
 
     # ── Experience fit ────────────────────────────────────────────────────────
