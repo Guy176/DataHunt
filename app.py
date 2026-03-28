@@ -339,9 +339,9 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
 .role-chip{display:inline-flex;align-items:center;gap:3px;background:#1e2d4a;border:1px solid #3a5a9a;color:#7eb4f0;padding:3px 6px 3px 10px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap}
 .chip-x{background:none;border:none;color:#7eb4f0;cursor:pointer;font-size:15px;line-height:1;padding:0 2px;opacity:.7;transition:opacity .15s}
 .chip-x:hover{opacity:1;color:#fff}
-.role-input{background:#1e1e30;border:1px solid #2e2e48;color:#e0e0e0;padding:5px 10px;border-radius:6px;font-size:12px;width:140px;outline:none;flex-shrink:0}
-.role-input:focus{border-color:#667eea}
-.role-input::placeholder{color:#555}
+.role-select{background:#1e1e30;border:1px solid #2e2e48;color:#aaa;padding:5px 10px;border-radius:6px;font-size:12px;outline:none;flex-shrink:0;cursor:pointer;max-width:160px}
+.role-select:focus{border-color:#667eea}
+.role-select option,.role-select optgroup{background:#1e1e30;color:#e0e0e0}
 .save-roles-btn{background:#1e2d4a;border:1px solid #3a5a9a;color:#7eb4f0;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0}
 .save-roles-btn:hover{background:#2a3d6a;border-color:#667eea;color:#fff}
 
@@ -440,7 +440,43 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f0f1a;color:#e0e0e0;m
   <div class="filter-row" style="flex-wrap:wrap;gap:6px">
     <span class="filter-label">Roles</span>
     <div class="role-chips" id="role-chips"></div>
-    <input class="role-input" id="role-input" type="text" placeholder="Add role..." onkeydown="if(event.key==='Enter'){addRole();event.preventDefault()}">
+    <select class="role-select" id="role-select" onchange="addRoleFromSelect(this)">
+      <option value="">+ Add role...</option>
+      <optgroup label="Data &amp; BI">
+        <option>Data Analyst</option>
+        <option>BI Developer</option>
+        <option>BI Analyst</option>
+        <option>Analytics Engineer</option>
+        <option>Reporting Analyst</option>
+        <option>Business Intelligence Developer</option>
+      </optgroup>
+      <optgroup label="Data Science &amp; AI">
+        <option>Data Scientist</option>
+        <option>Machine Learning Engineer</option>
+        <option>AI Analyst</option>
+        <option>AI Engineer</option>
+        <option>NLP Engineer</option>
+      </optgroup>
+      <optgroup label="Engineering">
+        <option>Data Engineer</option>
+        <option>Software Developer</option>
+        <option>Software Engineer</option>
+        <option>Frontend Developer</option>
+        <option>Backend Developer</option>
+        <option>Full Stack Developer</option>
+        <option>DevOps Engineer</option>
+        <option>Python Developer</option>
+        <option>Java Developer</option>
+      </optgroup>
+      <optgroup label="Product &amp; Design">
+        <option>Product Manager</option>
+        <option>Business Analyst</option>
+        <option>UX Designer</option>
+        <option>UI Designer</option>
+        <option>QA Engineer</option>
+      </optgroup>
+    </select>
+    <button class="save-roles-btn" onclick="clearRoles()" style="background:#2a1a1a;border-color:#7f1d1d;color:#f87171">Clear All</button>
     <button class="save-roles-btn" onclick="saveRoles()">&#128190; Save &amp; Apply</button>
   </div>
   <input class="search-box" id="search-input" type="text" placeholder="&#128269; Search title or company..." oninput="renderJobs()">
@@ -539,19 +575,24 @@ function renderRoleChips(){
   buildLinks();
 }
 
-function addRole(){
-  const inp=document.getElementById('role-input');
-  const val=inp.value.trim();
+function addRoleFromSelect(sel){
+  const val=sel.value;
+  sel.value='';
   if(!val) return;
   if(!activeRoles.map(r=>r.toLowerCase()).includes(val.toLowerCase()))
     activeRoles.push(val);
-  inp.value='';
   renderRoleChips();
   renderJobs();
 }
 
 function removeRole(i){
   activeRoles.splice(i,1);
+  renderRoleChips();
+  renderJobs();
+}
+
+function clearRoles(){
+  activeRoles=[];
   renderRoleChips();
   renderJobs();
 }
