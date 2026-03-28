@@ -187,61 +187,98 @@ def is_data_relevant(title):
 def score_job(job):
     """Return 0-100 relevance score for this job against Guy's resume.
 
-    Three components:
-      Role fit   (0-55)  — how well the job title matches Guy's target roles
-      Tech bonus (0-30)  — Power BI / Tableau / SQL mentioned in title or exp
-      Exp fit    (0-15)  — how well the experience level matches
+    Components:
+      Role fit   (0-52)  — job title match to Guy's target roles
+      Tech bonus (0-28)  — Power BI / SQL / Python / Tableau in title or exp
+      Location   (-10 to +10) — proximity to Ramat Gan
+      Exp fit    (0-10)  — experience level match
+    Penalties: startup/fast-paced company, far location.
     """
     title    = job.get("title", "").lower()
     exp_lbl  = job.get("experience_required", "").lower()
+    company  = job.get("company", "").lower()
+    location = job.get("location", "").lower()
     haystack = title + " " + exp_lbl
 
-    # ── Role fit (mutually exclusive, highest match wins) ─────────────────────
+    # ── Role fit ──────────────────────────────────────────────────────────────
     role_pts = 0
     if any(t in title for t in ["bi developer", "business intelligence developer"]):
-        role_pts = 58   # top preference
+        role_pts = 52   # top preference
     elif any(t in title for t in ["bi analyst", "business intelligence analyst"]):
-        role_pts = 53
-    elif "power bi" in title or "powerbi" in title:
-        role_pts = 52
-    elif "analytics engineer" in title:
         role_pts = 47
+    elif "power bi" in title or "powerbi" in title:
+        role_pts = 46
+    elif "analytics engineer" in title:
+        role_pts = 42
     elif "data analyst" in title or "analyst data" in title:
-        role_pts = 43
-    elif "reporting analyst" in title or "report analyst" in title:
         role_pts = 38
+    elif "reporting analyst" in title or "report analyst" in title:
+        role_pts = 34
     elif "ai analyst" in title:
-        role_pts = 36
+        role_pts = 32
     elif "business analyst" in title:
-        role_pts = 26
+        role_pts = 22
     elif "data engineer" in title:
-        role_pts = 20
+        role_pts = 18
     elif "data scientist" in title:
-        role_pts = 14
+        role_pts = 12
     elif "analyst" in title:
-        role_pts = 24
+        role_pts = 20
 
-    # ── Tech bonus (capped at 30) ─────────────────────────────────────────────
+    # Dashboard bonus — matches Guy's core experience
+    if "dashboard" in title:
+        role_pts = min(role_pts + 5, 52)
+
+    # ── Tech bonus (capped at 28) ─────────────────────────────────────────────
     tech = 0
     if "power bi" in haystack or "powerbi" in haystack: tech += 20
-    if "tableau"  in haystack:                           tech += 15
-    if "sql"      in haystack:                           tech += 10  # SQL > Python
-    if "python"   in haystack:                           tech += 5
+    if "sql"      in haystack:                           tech += 12  # SQL > Python
+    if "python"   in haystack:                           tech += 7
+    if "tableau"  in haystack:                           tech += 6   # ok but not expert
     if any(t in haystack for t in ["ssis", "etl", "dwh", "data warehouse"]): tech += 5
     if any(t in haystack for t in ["dbt", "looker"]):   tech += 4
-    tech = min(tech, 30)
+    # Python automation bonus
+    if "python" in haystack and any(w in haystack for w in
+            ["automat", "workflow", "script", "pipeline", "orchestrat"]):
+        tech += 5
+    tech = min(tech, 28)
+
+    # ── Location score ────────────────────────────────────────────────────────
+    _CLOSE = ["ramat gan", "tel aviv", "givatayim", "bnei brak", "bney brak",
+              "רמת גן", "תל אביב", "גבעתיים", "בני ברק"]
+    _OK    = ["petah tikva", "herzliya", "holon", "rishon", "rehovot",
+              "ramat hasharon", "bat yam", "azrieli",
+              "פתח תקווה", "הרצליה", "חולון", "ראשון", "רחובות", "בת ים"]
+    _FAR   = ["haifa", "jerusalem", "beer sheva", "beersheba", "eilat",
+              "חיפה", "ירושלים", "באר שבע", "אילת"]
+
+    if any(c in location for c in _CLOSE):
+        loc_pts = 10
+    elif any(c in location for c in _OK):
+        loc_pts = 4
+    elif any(c in location for c in _FAR):
+        loc_pts = -10
+    else:
+        loc_pts = 2   # "Israel" or unknown — neutral
 
     # ── Experience fit ────────────────────────────────────────────────────────
     if any(k in exp_lbl for k in ["entry level", "0-1", "0-2"]):
-        exp_pts = 15
+        exp_pts = 10
     elif any(k in exp_lbl for k in ["1-2", "1+ yrs", "1 yr"]):
-        exp_pts = 12
-    elif any(k in exp_lbl for k in ["2 yrs", "2-3", "2+ yrs"]):
         exp_pts = 8
+    elif any(k in exp_lbl for k in ["2 yrs", "2-3", "2+ yrs"]):
+        exp_pts = 5
     else:
-        exp_pts = 4   # unknown exp
+        exp_pts = 2   # unknown
 
-    return min(role_pts + tech + exp_pts, 100)
+    # ── Startup penalty ───────────────────────────────────────────────────────
+    startup_penalty = 0
+    if any(w in title + " " + company for w in
+           ["startup", "start-up", "fast-paced", "fast paced", "early stage"]):
+        startup_penalty = -8
+
+    total = role_pts + tech + loc_pts + exp_pts + startup_penalty
+    return max(0, min(total, 100))
 
 
 # ── Cross-site deduplication ─────────────────────────────────────────────────
