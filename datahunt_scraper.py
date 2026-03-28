@@ -55,13 +55,73 @@ JOBS_FILE      = os.path.join(_DATA_DIR, "jobs_data.json")
 PROGRESS_FILE  = os.path.join(_DATA_DIR, "scan_progress.json")
 CONFIG_FILE    = os.path.join(_DATA_DIR, "user_config.json")
 
-# Override ROLES from user config if present
+# ── Tech vocabulary for skill extraction from resumes ─────────────────────────
+TECH_VOCAB = [
+    # BI / Visualization
+    "power bi", "powerbi", "tableau", "qlik", "qliksense", "qlik sense",
+    "looker", "metabase", "superset", "sisense", "microstrategy",
+    # Databases / SQL
+    "sql", "mysql", "postgresql", "postgres", "oracle", "sql server", "mssql",
+    "sqlite", "redshift", "bigquery", "snowflake", "databricks", "hive",
+    "mongodb", "nosql", "cassandra", "dynamodb", "firebase",
+    # Languages
+    "python", "r", "javascript", "typescript", "java", "c#", "c++", "go",
+    "golang", "kotlin", "swift", "ruby", "php", "scala", "rust", "dart",
+    # Web / Frontend
+    "react", "angular", "vue", "next.js", "nextjs", "svelte", "html", "css",
+    "tailwind", "bootstrap", "jquery", "webpack", "node.js", "nodejs",
+    # Backend / APIs
+    "flask", "django", "fastapi", "express", "spring", "rails", "laravel",
+    "rest api", "graphql", "grpc",
+    # Data Engineering / ETL
+    "airflow", "dbt", "spark", "kafka", "flink", "luigi", "prefect", "dagster",
+    "ssis", "etl", "dwh", "data warehouse", "data lake", "pipeline",
+    # Cloud / DevOps
+    "aws", "azure", "gcp", "google cloud", "docker", "kubernetes", "k8s",
+    "terraform", "ansible", "jenkins", "github actions", "ci/cd",
+    "lambda", "s3", "ec2", "cloudwatch",
+    # ML / AI
+    "machine learning", "deep learning", "tensorflow", "pytorch", "scikit",
+    "sklearn", "nlp", "computer vision", "llm", "openai", "langchain",
+    "hugging face", "xgboost", "lightgbm",
+    # Analytics / Stats
+    "excel", "google sheets", "pandas", "numpy", "matplotlib", "seaborn",
+    "scipy", "statistics", "a/b testing", "ab testing",
+    # Other tools
+    "git", "jira", "confluence", "notion", "figma", "postman",
+    "power query", "dax", "m language",
+]
+
+def extract_skills_from_text(text):
+    """Return list of skills found in resume text, matched against TECH_VOCAB."""
+    t = text.lower()
+    found = []
+    for skill in TECH_VOCAB:
+        # Use word-boundary-aware matching for short tokens to avoid false positives
+        if len(skill) <= 3:
+            if re.search(r'\b' + re.escape(skill) + r'\b', t):
+                found.append(skill)
+        else:
+            if skill in t:
+                found.append(skill)
+    return found
+
+
+# Override ROLES and USER_SKILLS from user config if present
+_USER_SKILLS = []  # populated from config if resume was uploaded
 try:
     with open(CONFIG_FILE, encoding="utf-8") as _cf:
         _cfg = json.load(_cf)
     if _cfg.get("roles"):
         ROLES = _cfg["roles"]
         print(f"Using custom roles from config: {ROLES}")
+    if _cfg.get("skills"):
+        _USER_SKILLS = _cfg["skills"]
+        print(f"Loaded {len(_USER_SKILLS)} skills from config: {_USER_SKILLS[:10]}...")
+    elif _cfg.get("resume_text"):
+        # Extract on-the-fly if skills weren't pre-extracted
+        _USER_SKILLS = extract_skills_from_text(_cfg["resume_text"])
+        print(f"Extracted {len(_USER_SKILLS)} skills from resume text: {_USER_SKILLS[:10]}...")
 except Exception:
     pass  # use defaults
 os.makedirs(_DATA_DIR, exist_ok=True)
@@ -197,68 +257,56 @@ def is_data_relevant(title):
 
 
 # ── Resume-based relevance scoring ───────────────────────────────────────────
-# Tuned to Guy Amos: Power BI, Tableau, SQL, Python, BI Developer/Analyst roles
 
 def score_job(job):
-    """Return 0-100 relevance score for this job against Guy's resume.
+    """Return 0-100 relevance score for this job against the user's profile.
 
     Components:
-      Role fit   (0-52)  — job title match to Guy's target roles
-      Tech bonus (0-28)  — Power BI / SQL / Python / Tableau in title or exp
-      Location   (-10 to +10) — proximity to Ramat Gan
+      Role fit   (0-52)  — job title match to configured ROLES (order = priority)
+      Tech bonus (0-28)  — skills from user's resume found in job title/exp
+      Location   (-10 to +10) — proximity to Tel Aviv metro (configurable)
       Exp fit    (0-10)  — experience level match
-    Penalties: startup/fast-paced company, far location.
     """
     title    = job.get("title", "").lower()
     exp_lbl  = job.get("experience_required", "").lower()
-    company  = job.get("company", "").lower()
     location = job.get("location", "").lower()
     haystack = title + " " + exp_lbl
 
-    # ── Role fit ──────────────────────────────────────────────────────────────
+    # ── Role fit — dynamic from ROLES list (first = best match) ──────────────
     role_pts = 0
-    if "data analyst" in title or "analyst data" in title:
-        role_pts = 52   # top preference
-    elif any(t in title for t in ["bi developer", "business intelligence developer"]):
-        role_pts = 48
-    elif any(t in title for t in ["bi analyst", "business intelligence analyst"]):
-        role_pts = 46
-    elif "power bi" in title or "powerbi" in title:
-        role_pts = 44
-    elif "analytics engineer" in title:
-        role_pts = 42
-    elif "reporting analyst" in title or "report analyst" in title:
-        role_pts = 36
-    elif "ai analyst" in title:
-        role_pts = 32
-    elif "business analyst" in title:
-        role_pts = 22
-    elif "data engineer" in title:
-        role_pts = 18
-    elif "data scientist" in title:
-        role_pts = 12
-    elif "analyst" in title:
-        role_pts = 20
-
-    # Dashboard bonus — matches Guy's core experience
-    if "dashboard" in title:
-        role_pts = min(role_pts + 5, 52)
+    # Score based on position in user's ROLES list: index 0 → 52, 1 → 50, 2 → 48 …
+    for i, role in enumerate(ROLES):
+        if role.lower() in title:
+            role_pts = max(0, 52 - i * 2)
+            break
+    # Generic "analyst" fallback if nothing matched
+    if role_pts == 0 and "analyst" in title:
+        role_pts = 16
 
     # ── Tech bonus (capped at 28) ─────────────────────────────────────────────
     tech = 0
-    if "power bi" in haystack or "powerbi" in haystack: tech += 20
-    if "sql"      in haystack:                           tech += 12  # SQL > Python
-    if "python"   in haystack:                           tech += 7
-    if "tableau"  in haystack:                           tech += 6   # ok but not expert
-    if any(t in haystack for t in ["dbt", "looker"]):   tech += 4
-    # ETL/DWH penalty — Guy has Power Query only, not SSIS/heavy ETL
-    if any(t in haystack for t in ["ssis", "etl", "dwh", "data warehouse"]):
-        tech -= 6
-    # Python automation bonus
-    if "python" in haystack and any(w in haystack for w in
-            ["automat", "workflow", "script", "pipeline", "orchestrat"]):
-        tech += 5
-    tech = min(tech, 28)
+    if _USER_SKILLS:
+        # Dynamic: score based on how many of the user's skills appear in the job
+        matched = [s for s in _USER_SKILLS if s in haystack]
+        # Weight: first few skills (most prominent on resume) score higher
+        for idx, skill in enumerate(_USER_SKILLS):
+            if skill in haystack:
+                pts = max(2, 20 - idx * 2)  # 20, 18, 16 … down to 2 per skill
+                tech += pts
+        tech = min(tech, 28)
+    else:
+        # Fallback: Guy's original hardcoded scoring (Power BI / SQL / Python)
+        if "power bi" in haystack or "powerbi" in haystack: tech += 20
+        if "sql"      in haystack:                           tech += 12
+        if "python"   in haystack:                           tech += 7
+        if "tableau"  in haystack:                           tech += 6
+        if any(t in haystack for t in ["dbt", "looker"]):   tech += 4
+        if any(t in haystack for t in ["ssis", "etl", "dwh", "data warehouse"]):
+            tech -= 6
+        if "python" in haystack and any(w in haystack for w in
+                ["automat", "workflow", "script", "pipeline", "orchestrat"]):
+            tech += 5
+        tech = min(tech, 28)
 
     # ── Location score ────────────────────────────────────────────────────────
     _CLOSE = ["ramat gan", "tel aviv", "givatayim", "bnei brak", "bney brak",

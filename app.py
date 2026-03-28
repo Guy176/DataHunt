@@ -148,6 +148,10 @@ def api_upload_resume():
     if not text:
         return jsonify({"ok": False, "error": "Could not extract text from file"})
 
+    # Extract skills from resume text
+    from datahunt_scraper import extract_skills_from_text
+    skills = extract_skills_from_text(text)
+
     # Save to config
     payload = {}
     try:
@@ -156,10 +160,11 @@ def api_upload_resume():
     except Exception:
         pass
     payload["resume_text"] = text
+    payload["skills"] = skills
     with open(CONFIG_FILE, "w", encoding="utf-8") as cf:
         json.dump(payload, cf, ensure_ascii=False, indent=2)
 
-    return jsonify({"ok": True, "text": text})
+    return jsonify({"ok": True, "text": text, "skills": skills})
 
 
 @app.route("/api/config", methods=["GET"])
@@ -186,6 +191,9 @@ def api_config_post():
         payload["roles"] = roles
     if "resume_text" in data:
         payload["resume_text"] = data["resume_text"]
+        # Re-extract skills whenever resume text is updated
+        from datahunt_scraper import extract_skills_from_text
+        payload["skills"] = extract_skills_from_text(data["resume_text"])
     if "notes" in data:
         payload["notes"] = data["notes"]
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
