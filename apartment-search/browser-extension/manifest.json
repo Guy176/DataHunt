@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Israel Apartment Saver",
+  "version": "1.0.0",
+  "description": "Save Facebook Marketplace & group rental listings to your apartment search app",
+  "icons": {
+    "16":  "icons/icon16.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Save Listing",
+    "default_icon": {
+      "16":  "icons/icon16.png",
+      "48":  "icons/icon48.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.facebook.com/marketplace/*",
+        "https://www.facebook.com/groups/*",
+        "https://m.facebook.com/marketplace/*",
+        "https://m.facebook.com/groups/*"
+      ],
+      "js": ["content/extractor.js"],
+      "css": ["content/overlay.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.facebook.com/*",
+    "https://m.facebook.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ]
+}
