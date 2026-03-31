@@ -8,6 +8,60 @@ const CITIES = [
   "מודיעין", "לוד", "אילת",
 ];
 
+const NEIGHBORHOODS = {
+  "תל אביב": [
+    "פלורנטין", "נווה צדק", "רוטשילד", "דיזנגוף", "רמת אביב",
+    "הצפון הישן", "יפו", "כרם התימנים", "לב תל אביב", "נווה שאנן",
+    "שפירא", "קצנלסון", "מונטיפיורי", "הארגזים", "עג'מי", "בבלי",
+    "פארק צמרת", "אפקה", "נווה אביבים", "רמת החייל", "שכונת התקווה",
+  ],
+  "ירושלים": [
+    "רחביה", "המושבה הגרמנית", "קטמון", "בקעה", "תלפיות",
+    "מלחה", "רמות", "גבעת שאול", "הר חומה", "פסגת זאב",
+    "גילה", "מרכז העיר", "נחלאות", "מאה שערים", "גבעת מרדכי",
+    "קרית מנחם", "עין כרם", "הגבעה הצרפתית",
+  ],
+  "חיפה": [
+    "כרמל", "הדר", "המושבה הגרמנית", "בת גלים", "נווה שאנן",
+    "רמת הנשיא", "אחוזה", "דניה", "כרמליה", "קריית חיים",
+    "קריית אליעזר", "פלורנטין", "וורדיה", "עיר תחתית",
+  ],
+  "ראשון לציון": [
+    "נחלת יהודה", "מרכז העיר", "אזור תעשייה", "רמת אליהו",
+    "ניר צבי", "בית גנים", "כפר חב\"ד", "משמר איילון",
+  ],
+  "פתח תקווה": [
+    "מרכז העיר", "כפר גנים", "סגולה", "גני תקווה", "קריית ארבע",
+    "נחלת יעקב", "אם המושבות",
+  ],
+  "נתניה": [
+    "עיר ימים", "מרכז העיר", "רמת פולג", "שכונת הדר",
+    "הגבעה", "אגמים", "עמיקם",
+  ],
+  "באר שבע": [
+    "נאות לון", "רמות", "נאות אשכול", "גבעות בר", "שכונה ד",
+    "שכונה ג", "נאות הנגב", "רמת בגין",
+  ],
+  "רמת גן": [
+    "בורוכוב", "מרכז העיר", "נאות גנים", "שיכון ותיקים",
+    "קריית קרינגי",
+  ],
+  "הרצליה": [
+    "הרצליה פיתוח", "הרצליה ב", "כפר שמריהו", "נווה עמל",
+    "אפק", "גליל ים",
+  ],
+  "חולון": [
+    "מרכז העיר", "בת ים הצעירה", "קריית שרת", "נאות דשא",
+  ],
+};
+
+// Returns neighborhoods for selected city, or all neighborhoods if no city selected
+function getNeighborhoods(city) {
+  if (city && NEIGHBORHOODS[city]) return NEIGHBORHOODS[city];
+  if (!city) return Object.values(NEIGHBORHOODS).flat().sort((a, b) => a.localeCompare(b, "he"));
+  return [];
+}
+
 const ROOM_OPTIONS = ["1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5", "6+"];
 
 const SOURCES = [
@@ -80,7 +134,7 @@ export default function SearchFilters({ filters, onChange, onSearch, loading }) 
           <Field label="City">
             <select
               value={filters.city}
-              onChange={(e) => set("city", e.target.value)}
+              onChange={(e) => onChange({ ...filters, city: e.target.value, neighborhood: "" })}
               className="input"
             >
               <option value="">All cities</option>
@@ -94,13 +148,16 @@ export default function SearchFilters({ filters, onChange, onSearch, loading }) 
 
           {/* Neighborhood */}
           <Field label="Neighborhood">
-            <input
-              type="text"
-              placeholder="e.g. רמת אביב"
+            <select
               value={filters.neighborhood}
               onChange={(e) => set("neighborhood", e.target.value)}
-              className="input rtl-text placeholder:font-sans placeholder:not-italic"
-            />
+              className="input rtl-text"
+            >
+              <option value="">All neighborhoods</option>
+              {getNeighborhoods(filters.city).map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
           </Field>
 
           {/* Price */}
