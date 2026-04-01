@@ -3,3 +3,4 @@ __pycache__/
 *.pyo
 .env
 datahunt_results.html
+*.db
