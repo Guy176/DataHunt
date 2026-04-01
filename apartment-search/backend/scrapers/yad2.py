@@ -71,31 +71,62 @@ YAD2_CITIES: dict[str, str] = {
 
 class Yad2Scraper(BaseScraper):
     BASE_URL = "https://gw.yad2.co.il/feed-search-legacy/realestate/rent"
+    WARM_URL = "https://www.yad2.co.il/realestate/rent"
     MAX_PAGES = 3
 
-    HEADERS = {
+    # Full browser headers — Yad2 rejects requests without a valid session
+    BROWSER_HEADERS = {
         "User-Agent": (
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
-            "Mobile/15E148 Safari/604.1"
+            "Mozilla/5.0 (Linux; Android 14; SM-S928B) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Mobile Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    }
+
+    API_HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Linux; Android 14; SM-S928B) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Mobile Safari/537.36"
         ),
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
         "Referer": "https://www.yad2.co.il/",
         "Origin": "https://www.yad2.co.il",
+        "Connection": "keep-alive",
     }
 
     async def scrape(self, filters: dict) -> list[Listing]:
         params = self._build_params(filters)
         results: list[Listing] = []
 
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=30,
+            follow_redirects=True,
+            headers=self.BROWSER_HEADERS,
+        ) as client:
+            # Warm up: visit the main page to get session cookies
+            try:
+                await client.get(self.WARM_URL)
+                await asyncio.sleep(1.2)
+            except Exception as e:
+                print(f"[Yad2] Warm-up failed (continuing anyway): {e}")
+
             for page in range(1, self.MAX_PAGES + 1):
                 params["page"] = page
                 try:
                     resp = await client.get(
-                        self.BASE_URL, params=params, headers=self.HEADERS
+                        self.BASE_URL, params=params, headers=self.API_HEADERS
                     )
+                    if resp.status_code == 403:
+                        print(f"[Yad2] 403 on page {page} — session rejected")
+                        break
                     if resp.status_code != 200:
                         print(f"[Yad2] HTTP {resp.status_code} on page {page}")
                         break
@@ -126,6 +157,7 @@ class Yad2Scraper(BaseScraper):
                     print(f"[Yad2] Unexpected error: {e}")
                     break
 
+        print(f"[Yad2] Done — {len(results)} listings")
         return results
 
     # ------------------------------------------------------------------

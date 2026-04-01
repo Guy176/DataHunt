@@ -59,6 +59,8 @@ MADLAN_BASE = "https://www.madlan.co.il"
 
 
 class MadlanScraper(BaseScraper):
+    WARM_URL = "https://www.madlan.co.il"
+
     HEADERS = {
         "User-Agent": (
             "Mozilla/5.0 (Linux; Android 13; Pixel 7) "
@@ -68,6 +70,8 @@ class MadlanScraper(BaseScraper):
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "he-IL,he;q=0.9,en;q=0.8",
         "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
     }
 
     async def scrape(self, filters: dict) -> list[Listing]:
@@ -79,11 +83,21 @@ class MadlanScraper(BaseScraper):
 
         results: list[Listing] = []
 
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True, headers=self.HEADERS) as client:
+            # Warm up: visit the main page to get session cookies
+            try:
+                await client.get(self.WARM_URL)
+                await asyncio.sleep(1.2)
+            except Exception as e:
+                print(f"[Madlan] Warm-up failed (continuing anyway): {e}")
+
             for page in range(1, 4):
                 try:
                     page_params = {**params, "page": page}
-                    resp = await client.get(url, params=page_params, headers=self.HEADERS)
+                    resp = await client.get(url, params=page_params)
+                    if resp.status_code == 403:
+                        print(f"[Madlan] 403 on page {page} — session rejected")
+                        break
                     if resp.status_code != 200:
                         print(f"[Madlan] HTTP {resp.status_code}")
                         break
