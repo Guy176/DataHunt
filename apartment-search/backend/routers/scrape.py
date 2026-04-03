@@ -25,7 +25,7 @@ async def _run_scrape(filters: SearchFilters, job_id: str) -> None:
             if not cls:
                 continue
             try:
-                listings = await cls().scrape(filters.dict())
+                listings = await cls().scrape(filters.model_dump())
                 count = 0
                 for listing in listings:
                     d = listing.to_dict()
