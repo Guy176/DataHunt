@@ -1,3 +1,98 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --bg:           #080C14;
+  --surface:      #0F1623;
+  --surface-2:    #162035;
+  --surface-3:    #1E2D47;
+  --accent:       #00D4B8;
+  --accent-dim:   rgba(0, 212, 184, 0.15);
+  --accent-glow:  rgba(0, 212, 184, 0.35);
+  --blue:         #4D8FFF;
+  --red:          #FF5757;
+  --text:         #EEF0F5;
+  --text-muted:   #5A6A82;
+  --text-dim:     #8A9BB5;
+  --border:       rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(255, 255, 255, 0.12);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  min-height: 100vh;
+  /* Grain overlay */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 2px; }
+
+/* Selection */
+::selection { background: var(--accent-dim); color: var(--accent); }
+
+/* Scan pulse animation */
+@keyframes scanPulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50%       { box-shadow: 0 0 0 12px transparent; }
+}
+
+/* Card entrance */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Shimmer */
+@keyframes shimmer {
+  from { background-position: -400px 0; }
+  to   { background-position: 400px 0; }
+}
+
+/* Blink cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.card-enter {
+  animation: fadeUp 0.4s ease forwards;
+  opacity: 0;
+}
+
+.skeleton {
+  background: linear-gradient(90deg,
+    var(--surface) 0%,
+    var(--surface-2) 50%,
+    var(--surface) 100%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+input, select {
+  font-family: 'Syne', sans-serif;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+input::placeholder { color: var(--text-muted); }
+
+select option { background: var(--surface-2); }

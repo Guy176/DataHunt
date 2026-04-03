@@ -10,12 +10,13 @@ const DEFAULTS = {
 };
 
 export default function App() {
-  const [tab,       setTab]       = useState("search");
-  const [filters,   setFilters]   = useState(DEFAULTS);
-  const [listings,  setListings]  = useState([]);
-  const [loading,   setLoading]   = useState(false);
-  const [scanning,  setScanning]  = useState(false);
-  const [toast,     setToast]     = useState("");
+  const [tab,      setTab]      = useState("search");
+  const [filters,  setFilters]  = useState(DEFAULTS);
+  const [listings, setListings] = useState([]);
+  const [loading,  setLoading]  = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [toast,    setToast]    = useState(null);
+  const [scanCount, setScanCount] = useState(null);
   const pollRef = useRef(null);
 
   useEffect(() => { load(); }, [tab]); // eslint-disable-line
@@ -23,7 +24,7 @@ export default function App() {
   async function load(f = filters) {
     setLoading(true);
     try {
-      const params = {
+      const data = await api.getListings({
         city:          f.city          || undefined,
         neighborhood:  f.neighborhood  || undefined,
         min_price:     f.min_price     || undefined,
@@ -37,11 +38,10 @@ export default function App() {
         sort_order:    f.sort_order,
         favorites_only: tab === "favorites" || undefined,
         limit: 200,
-      };
-      const data = await api.getListings(params);
+      });
       setListings(Array.isArray(data) ? data : []);
     } catch (e) {
-      showToast("Failed to load listings");
+      toast("Error loading listings", "error");
       console.error(e);
     } finally {
       setLoading(false);
@@ -51,7 +51,8 @@ export default function App() {
   async function scan() {
     if (scanning) return;
     setScanning(true);
-    showToast("Starting scan…");
+    setScanCount(null);
+    showToast("Initialising scan…", "info");
     try {
       const body = {
         city:         filters.city         || undefined,
@@ -71,15 +72,16 @@ export default function App() {
           if (s.status === "done") {
             clearInterval(pollRef.current);
             setScanning(false);
-            showToast(`Found ${s.count} listings`);
+            setScanCount(s.count);
+            showToast(`${s.count} listings found`, "success");
             load();
           } else if (s.status === "running") {
-            showToast("Scanning…");
+            showToast("Scraping Yad2 & Madlan…", "info");
           }
           if (attempts > 120) {
             clearInterval(pollRef.current);
             setScanning(false);
-            showToast("Scan timed out");
+            showToast("Scan timed out", "error");
           }
         } catch {
           clearInterval(pollRef.current);
@@ -88,14 +90,14 @@ export default function App() {
       }, 2000);
     } catch (e) {
       setScanning(false);
-      showToast("Scan failed — check backend");
+      showToast("Scan failed — is the backend running?", "error");
       console.error(e);
     }
   }
 
-  function showToast(msg) {
-    setToast(msg);
-    setTimeout(() => setToast(""), 5000);
+  function showToast(msg, type = "info") {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 5000);
   }
 
   async function toggleFav(id) {
@@ -106,7 +108,7 @@ export default function App() {
   }
 
   async function del(id) {
-    if (!confirm("Remove listing?")) return;
+    if (!confirm("Remove this listing?")) return;
     try {
       await api.deleteListing(id);
       setListings(prev => prev.filter(l => l.id !== id));
@@ -115,58 +117,122 @@ export default function App() {
 
   useEffect(() => () => clearInterval(pollRef.current), []);
 
+  const toastColors = {
+    info:    "border-[var(--accent)] text-[var(--accent)]",
+    success: "border-emerald-400 text-emerald-400",
+    error:   "border-[var(--red)] text-[var(--red)]",
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b shadow-sm sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <span className="font-bold text-lg text-blue-600">🏠 Apartment Hunt</span>
-          <nav className="flex gap-1">
-            {["search", "favorites"].map(t => (
-              <button key={t} onClick={() => setTab(t)}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors
-                  ${tab === t ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}>
-                {t === "search" ? "Search" : "Saved"}
+    <div className="min-h-screen" style={{ background: "var(--bg)" }}>
+      {/* ── HEADER ── */}
+      <header style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}
+        className="sticky top-0 z-40 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+
+          {/* Logo */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base"
+              style={{ background: "var(--accent-dim)", border: "1px solid var(--accent-glow)" }}>
+              🏠
+            </div>
+            <div>
+              <div className="font-bold text-sm tracking-wide" style={{ color: "var(--text)" }}>
+                APARTMENT HUNT
+              </div>
+              <div className="text-[10px] tracking-widest" style={{ color: "var(--text-muted)" }}>
+                ISRAEL RENTAL SEARCH
+              </div>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <nav className="flex gap-1 p-1 rounded-xl" style={{ background: "var(--surface-2)" }}>
+            {[
+              { id: "search",    label: "Search"  },
+              { id: "favorites", label: "Saved"   },
+            ].map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wider uppercase transition-all"
+                style={tab === t.id
+                  ? { background: "var(--accent)", color: "#080C14" }
+                  : { color: "var(--text-muted)" }}>
+                {t.label}
               </button>
             ))}
           </nav>
+
+          {/* Scan button */}
           <button onClick={scan} disabled={scanning}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50
-              text-white text-sm font-medium px-4 py-2 rounded-full transition-colors">
-            {scanning
-              ? <><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"/>Scanning…</>
-              : "⚡ Scan Now"}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold tracking-widest uppercase transition-all disabled:opacity-60 shrink-0"
+            style={{
+              background: scanning ? "var(--accent-dim)" : "var(--accent)",
+              color: scanning ? "var(--accent)" : "#080C14",
+              border: scanning ? "1px solid var(--accent)" : "none",
+              animation: scanning ? "scanPulse 1.5s ease-in-out infinite" : "none",
+            }}>
+            {scanning ? (
+              <>
+                <span className="w-3 h-3 rounded-full border-2 animate-spin"
+                  style={{ borderColor: "var(--accent) transparent transparent transparent" }} />
+                SCANNING
+              </>
+            ) : (
+              <>⚡ SCAN NOW</>
+            )}
           </button>
         </div>
       </header>
 
-      {/* Toast */}
+      {/* ── TOAST ── */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50
-          bg-gray-900 text-white text-sm px-5 py-2.5 rounded-full shadow-lg">
-          {toast}
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-xl text-sm font-medium tracking-wide"
+          style={{ background: "var(--surface)", border: `1px solid`, backdropFilter: "blur(12px)" }}
+          onClick={() => setToast(null)}>
+          <span className={toastColors[toast.type]}>{toast.msg}</span>
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 py-4">
-        <div className="lg:grid lg:grid-cols-[300px_1fr] lg:gap-6">
-          <aside className="mb-4 lg:mb-0">
-            <Filters
-              filters={filters}
-              onChange={setFilters}
-              onSearch={() => load()}
-              loading={loading}
-            />
-            <p className="text-xs text-gray-400 text-center mt-2">
-              {listings.length} listing{listings.length !== 1 ? "s" : ""} shown
-            </p>
+      {/* ── SCAN TICKER ── */}
+      {scanning && (
+        <div className="h-0.5 w-full overflow-hidden" style={{ background: "var(--surface-2)" }}>
+          <div className="h-full animate-pulse" style={{ background: "var(--accent)", width: "60%" }} />
+        </div>
+      )}
+
+      {/* ── MAIN ── */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <div className="lg:grid lg:grid-cols-[280px_1fr] lg:gap-6">
+
+          {/* Sidebar */}
+          <aside className="mb-6 lg:mb-0">
+            <Filters filters={filters} onChange={setFilters} onSearch={() => load()} loading={loading} />
+
+            {/* Stats bar */}
+            <div className="mt-3 flex items-center justify-between px-1">
+              <span className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "'Fira Code', monospace" }}>
+                {listings.length} results
+              </span>
+              {scanCount !== null && (
+                <span className="text-xs" style={{ color: "var(--accent)", fontFamily: "'Fira Code', monospace" }}>
+                  +{scanCount} from last scan
+                </span>
+              )}
+            </div>
           </aside>
-          <div>
+
+          {/* Grid */}
+          <section>
             {tab === "favorites" && (
-              <p className="text-sm text-gray-500 mb-3 font-medium">Saved listings</p>
+              <div className="mb-4 flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full" style={{ background: "var(--accent)" }} />
+                <span className="text-xs tracking-widest uppercase" style={{ color: "var(--text-muted)" }}>
+                  Saved listings
+                </span>
+              </div>
             )}
             <ListingGrid listings={listings} loading={loading} onFav={toggleFav} onDelete={del} />
-          </div>
+          </section>
         </div>
       </main>
     </div>
