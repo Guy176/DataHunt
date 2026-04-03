@@ -1,8 +1,10 @@
 """
-Madlan scraper — extracts listings from __NEXT_DATA__ on the search page,
-with fallback to the /_next/data/ JSON endpoint.
+Madlan scraper — tries multiple endpoints:
+1. homes/getData REST API (older but may still work)
+2. __NEXT_DATA__ HTML extraction (Next.js 12 style)
+3. Next.js 13 RSC chunk extraction
 """
-import asyncio, json, re
+import asyncio, json, re, urllib.parse
 from typing import Optional
 from curl_cffi.requests import AsyncSession
 from .base import BaseScraper, Listing
@@ -22,53 +24,83 @@ SLUGS = {
     "לוד":     "lod",             "אילת": "eilat",
 }
 
+# Hebrew city names for the REST API (uses Hebrew directly)
+CITY_HE = {v: k for k, v in SLUGS.items()}  # slug → hebrew
+
 
 class MadlanScraper(BaseScraper):
     async def scrape(self, filters: dict) -> list[Listing]:
-        city = (filters.get("city") or "").strip()
-        slug = SLUGS.get(city) or SLUGS.get(city.lower()) or "israel"
-        url  = f"{BASE}/for-rent/{slug}"
-        qp   = self._params(filters)
+        city_he = (filters.get("city") or "").strip() or "ישראל"
+        slug    = SLUGS.get(city_he) or SLUGS.get(city_he.lower()) or "israel"
         results: list[Listing] = []
 
         async with AsyncSession(impersonate="chrome124") as s:
-            # Page 1: get HTML, extract __NEXT_DATA__, also grab buildId for JSON API
-            try:
-                r = await s.get(url, params=qp)
-                print(f"[Madlan] page 1 → {r.status_code}")
-                if r.status_code != 200:
-                    print(f"[Madlan] body: {r.text[:300]}")
-                    return []
+            # ── Attempt 1: homes/getData REST API ──────────────────────────
+            items = await self._try_rest_api(s, city_he, filters)
+            if items:
+                print(f"[Madlan] REST API returned {len(items)} raw items")
+            else:
+                # ── Attempt 2: HTML page __NEXT_DATA__ / RSC ──────────────
+                items = await self._try_html(s, slug, filters)
 
-                items, build_id = self._extract(r.text)
-
-                if not items and build_id:
-                    # Fallback: hit the Next.js JSON data endpoint directly
-                    json_url = f"{BASE}/_next/data/{build_id}/for-rent/{slug}.json"
-                    print(f"[Madlan] trying Next.js data endpoint: {json_url}")
-                    jr = await s.get(json_url, params=qp)
-                    print(f"[Madlan] _next/data → {jr.status_code}")
-                    if jr.status_code == 200:
-                        try:
-                            jdata = jr.json()
-                            items, _ = self._extract_from_props(
-                                jdata.get("pageProps", jdata)
-                            )
-                        except Exception as e:
-                            print(f"[Madlan] _next/data parse error: {e}")
-
-                for raw in items:
-                    lst = self._parse(raw)
-                    if lst:
-                        results.append(lst)
-
-                await asyncio.sleep(1.0)
-
-            except Exception as e:
-                print(f"[Madlan] error: {e}")
+            for raw in items:
+                lst = self._parse(raw)
+                if lst:
+                    results.append(lst)
 
         print(f"[Madlan] done — {len(results)} listings")
         return results
+
+    # ── REST API ──────────────────────────────────────────────────────────
+    async def _try_rest_api(self, s, city_he: str, filters: dict) -> list[dict]:
+        query = {
+            "sortBy": "auto",
+            "zoom": 12,
+            "source": "all",
+            "areaId": city_he,
+            "filter": {
+                "dealTypes": ["FOR_RENT"],
+                "addBulletinFromPrivate": True,
+                "addBulletinFromAgent": True,
+                "addProjects": False,
+                "conditions": [],
+            },
+        }
+        if filters.get("min_price") or filters.get("max_price"):
+            query["filter"]["price"] = {
+                "min": filters.get("min_price") or 0,
+                "max": filters.get("max_price") or 99999,
+            }
+        if filters.get("min_rooms"):
+            query["filter"]["rooms"] = {"min": filters["min_rooms"]}
+
+        url = f"{BASE}/homes/getData/?json={urllib.parse.quote(json.dumps(query, ensure_ascii=False))}"
+        try:
+            r = await s.get(url)
+            print(f"[Madlan] homes/getData → {r.status_code}")
+            if r.status_code == 200:
+                data = r.json()
+                print(f"[Madlan] REST response type: {type(data).__name__}, keys: {list(data.keys())[:8] if isinstance(data, dict) else 'list'}")
+                items = self._deep(data)
+                if items:
+                    return items
+        except Exception as e:
+            print(f"[Madlan] REST API error: {e}")
+        return []
+
+    # ── HTML scraping ─────────────────────────────────────────────────────
+    async def _try_html(self, s, slug: str, filters: dict) -> list[dict]:
+        url    = f"{BASE}/for-rent/{slug}"
+        params = self._params(filters)
+        try:
+            r = await s.get(url, params=params)
+            print(f"[Madlan] HTML page → {r.status_code}")
+            if r.status_code != 200:
+                return []
+            return self._extract_html(r.text)
+        except Exception as e:
+            print(f"[Madlan] HTML error: {e}")
+            return []
 
     def _params(self, f: dict) -> dict:
         p: dict = {}
@@ -78,136 +110,62 @@ class MadlanScraper(BaseScraper):
         if f.get("max_rooms"): p["rooms_max"] = f["max_rooms"]
         return p
 
-    def _extract(self, html: str):
-        """Returns (items, build_id). Tries multiple extraction strategies."""
-
-        # Strategy 1: classic __NEXT_DATA__ (Next.js 12 and below)
-        m = re.search(
-            r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>\s*(\{.*?\})\s*</script>',
-            html, re.DOTALL
-        )
+    def _extract_html(self, html: str) -> list[dict]:
+        # Classic __NEXT_DATA__
+        m = re.search(r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>', html, re.DOTALL)
         if m:
             try:
-                data     = json.loads(m.group(1))
-                build_id = data.get("buildId")
-                props    = data.get("props", {}).get("pageProps", {})
-                items, _ = self._extract_from_props(props)
-                if items:
-                    return items, build_id
-                print("[Madlan] __NEXT_DATA__ found but no listings inside")
-                return [], build_id
-            except Exception as e:
-                print(f"[Madlan] __NEXT_DATA__ parse error: {e}")
+                data  = json.loads(m.group(1))
+                props = data.get("props", {}).get("pageProps", {})
+                print(f"[Madlan] __NEXT_DATA__ pageProps keys: {list(props.keys())[:10]}")
 
-        # Strategy 2: Next.js 13+ App Router — data pushed into
-        # self.__next_f or __NEXT_RSC__ script chunks
-        chunks = re.findall(r'self\.__next_f\.push\(\[.*?,\s*"(.*?)"\]\)', html)
+                # dehydratedState (React Query)
+                queries = props.get("dehydratedState", {}).get("queries", [])
+                for q in queries:
+                    items = self._deep(q.get("state", {}).get("data", {}))
+                    if items:
+                        print(f"[Madlan] dehydratedState → {len(items)} items")
+                        return items
+
+                items = self._deep(props)
+                if items:
+                    return items
+            except Exception as e:
+                print(f"[Madlan] __NEXT_DATA__ error: {e}")
+
+        # Next.js 13 RSC chunks
+        chunks = re.findall(r'self\.__next_f\.push\(\[1,"(.*?)"\]\)', html)
         for chunk in chunks:
             try:
-                decoded = chunk.encode().decode("unicode_escape")
-                if '"listings"' in decoded or '"rentPrice"' in decoded or '"price"' in decoded:
-                    items = self._extract_from_rsc_chunk(decoded)
+                decoded = chunk.encode("utf-8").decode("unicode_escape")
+                if '"price"' in decoded or '"rentPrice"' in decoded:
+                    items = self._extract_rsc(decoded)
                     if items:
-                        print(f"[Madlan] RSC chunk found {len(items)} items")
-                        return items, None
+                        print(f"[Madlan] RSC chunk → {len(items)} items")
+                        return items
             except Exception:
                 pass
 
-        # Strategy 3: any inline <script> containing JSON with listing-like keys
-        scripts = re.findall(r'<script[^>]*type=["\']application/json["\'][^>]*>(.*?)</script>', html, re.DOTALL)
-        for raw in scripts:
-            try:
-                obj = json.loads(raw.strip())
-                items = self._deep(obj)
-                if items:
-                    print(f"[Madlan] found {len(items)} items in application/json script")
-                    return items, None
-            except Exception:
-                pass
+        print(f"[Madlan] no data in HTML (length={len(html)}, scripts={html.count('<script')})")
+        return []
 
-        # Strategy 4: window.__INITIAL_STATE__ or similar
-        for pat in [
-            r'window\.__INITIAL_STATE__\s*=\s*(\{.*?\})(?:;|\n)',
-            r'window\.__DATA__\s*=\s*(\{.*?\})(?:;|\n)',
-            r'"listings"\s*:\s*(\[.*?\])',
-        ]:
-            m2 = re.search(pat, html, re.DOTALL)
-            if m2:
-                try:
-                    obj   = json.loads(m2.group(1))
-                    items = obj if isinstance(obj, list) else self._deep(obj)
-                    if items:
-                        print(f"[Madlan] found {len(items)} items via window pattern")
-                        return items, None
-                except Exception:
-                    pass
-
-        print("[Madlan] no data found — dumping script tag count for debug")
-        script_count = html.count("<script")
-        print(f"[Madlan] page has {script_count} <script> tags, HTML length={len(html)}")
-        return [], None
-
-    def _extract_from_rsc_chunk(self, text: str) -> list[dict]:
-        """Parse Next.js RSC (React Server Component) payload chunk."""
-        # RSC chunks are line-delimited JSON rows like: 0:["$","div",...]
-        items = []
+    def _extract_rsc(self, text: str) -> list[dict]:
         for line in text.splitlines():
             try:
                 colon = line.index(":")
                 payload = json.loads(line[colon + 1:])
-                found = self._deep(payload)
+                found   = self._deep(payload)
                 if found:
-                    items.extend(found)
+                    return found
             except Exception:
                 pass
-        return items
-
-    def _extract_from_props(self, props: dict):
-        print(f"[Madlan] pageProps keys: {list(props.keys())[:15]}")
-
-        # Log sizes of dict/list values to spot where data lives
-        for k, v in props.items():
-            if isinstance(v, list) and v:
-                print(f"[Madlan]   {k}: list[{len(v)}]")
-            elif isinstance(v, dict) and v:
-                print(f"[Madlan]   {k}: dict keys={list(v.keys())[:6]}")
-
-        # Known paths to try
-        candidates = [
-            ["listings"],
-            ["items"],
-            ["feed"],
-            ["results"],
-            ["data", "listings"],
-            ["data", "items"],
-            ["data", "feed"],
-            ["initialProps", "listings"],
-            ["searchResults", "listings"],
-            ["searchResults", "items"],
-            ["listingsList"],
-            ["listingsResult", "listings"],
-        ]
-        for path in candidates:
-            obj = props
-            for key in path:
-                obj = obj.get(key) if isinstance(obj, dict) else None
-            if isinstance(obj, list) and obj and isinstance(obj[0], dict):
-                print(f"[Madlan] found {len(obj)} items at {' > '.join(path)}")
-                return obj, None
-
-        # Deep search
-        found = self._deep(props)
-        if found:
-            print(f"[Madlan] deep-search found {len(found)} items")
-        else:
-            print("[Madlan] no listings found in pageProps")
-        return found, None
+        return []
 
     def _deep(self, obj, depth=0) -> list[dict]:
-        if depth > 6:
+        if depth > 7:
             return []
         if isinstance(obj, list) and len(obj) > 1 and isinstance(obj[0], dict):
-            if any(k in obj[0] for k in ("price", "id", "listingId", "rentPrice")):
+            if any(k in obj[0] for k in ("price", "rentPrice", "id", "listingId")):
                 return obj
         if isinstance(obj, dict):
             for v in obj.values():
@@ -218,13 +176,13 @@ class MadlanScraper(BaseScraper):
 
     def _parse(self, item: dict) -> Optional[Listing]:
         try:
-            item_id = str(item.get("id") or item.get("_id") or item.get("listingId", ""))
+            item_id = str(item.get("id") or item.get("_id") or item.get("listingId") or item.get("bulletinId") or "")
             if not item_id:
                 return None
 
             price = None
             try:
-                raw = str(item.get("price") or item.get("rentPrice") or "")
+                raw   = str(item.get("price") or item.get("rentPrice") or "")
                 price = int(raw.replace(",", "").replace("₪", "").strip())
             except (ValueError, TypeError):
                 pass
@@ -236,17 +194,17 @@ class MadlanScraper(BaseScraper):
                 try: return int(v) if v is not None else None
                 except: return None
 
-            rooms    = _f(item.get("rooms") or item.get("roomsCount"))
-            floor    = _i(item.get("floor")  or item.get("floorNumber"))
-            size_sqm = _f(item.get("size") or item.get("squareMeters") or item.get("area"))
+            rooms    = _f(item.get("rooms") or item.get("roomsCount") or item.get("numberOfRooms"))
+            floor    = _i(item.get("floor") or item.get("floorNumber"))
+            size_sqm = _f(item.get("size") or item.get("squareMeters") or item.get("area") or item.get("totalArea"))
 
             loc = item.get("location") or item.get("address") or {}
             if isinstance(loc, str):
                 address = loc; city = nbhd = street = ""
             else:
-                city    = loc.get("city", "") or item.get("city", "")
-                nbhd    = loc.get("neighborhood", "") or item.get("neighborhood", "")
-                street  = loc.get("street", "") or item.get("street", "")
+                city    = loc.get("city", "") or item.get("city", "") or item.get("cityName", "")
+                nbhd    = loc.get("neighborhood", "") or item.get("neighborhood", "") or item.get("neighborhoodName", "")
+                street  = loc.get("street", "") or item.get("street", "") or item.get("streetName", "")
                 address = ", ".join(x for x in [street, nbhd, city] if x)
 
             images    = item.get("images") or item.get("photos") or []
@@ -264,9 +222,9 @@ class MadlanScraper(BaseScraper):
                 title=item.get("title") or address or "Madlan Listing",
                 price=price, rooms=rooms, floor=floor, size_sqm=size_sqm,
                 city=city, neighborhood=nbhd, street=street, address=address,
-                description=item.get("description") or "",
+                description=item.get("description") or item.get("comments") or "",
                 image_url=image_url, url=listing_url,
-                contact_name=item.get("contactName"),
+                contact_name=item.get("contactName") or item.get("contact_name"),
             )
         except Exception as e:
             print(f"[Madlan] parse error: {e}")

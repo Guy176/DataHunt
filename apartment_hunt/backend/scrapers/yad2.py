@@ -1,6 +1,6 @@
 """
-Yad2 scraper — scrapes the HTML search page and extracts __NEXT_DATA__,
-avoiding the blocked internal API at gw.yad2.co.il.
+Yad2 scraper — scrapes www.yad2.co.il/realestate/rent HTML and extracts
+listings from the React Query dehydratedState embedded in __NEXT_DATA__.
 """
 import asyncio, json, re
 from typing import Optional
@@ -31,27 +31,26 @@ class Yad2Scraper(BaseScraper):
             for page in range(1, 4):
                 params["page"] = page
                 try:
-                    url = f"{BASE}/realestate/rent"
-                    r = await s.get(url, params=params)
+                    r = await s.get(f"{BASE}/realestate/rent", params=params)
                     print(f"[Yad2] page {page} → {r.status_code}")
 
                     if r.status_code != 200:
-                        print(f"[Yad2] body preview: {r.text[:300]}")
+                        print(f"[Yad2] body: {r.text[:300]}")
                         break
 
                     items = self._extract(r.text)
                     if not items:
                         break
 
-                    if items:
-                        print(f"[Yad2] first item keys: {list(items[0].keys())[:10]}")
+                    before = len(results)
                     for item in items:
-                        if not isinstance(item, dict):
-                            continue
+                        if not isinstance(item, dict) or not item.get("id"):
+                            continue  # skip ads (no id) and non-dict entries
                         lst = self._parse(item)
                         if lst:
                             results.append(lst)
 
+                    print(f"[Yad2] page {page}: {len(results) - before} listings added")
                     await asyncio.sleep(1.0)
 
                 except Exception as e:
@@ -82,103 +81,98 @@ class Yad2Scraper(BaseScraper):
             html, re.DOTALL
         )
         if not m:
-            print("[Yad2] __NEXT_DATA__ not found in HTML")
+            print("[Yad2] __NEXT_DATA__ not found")
             return []
 
         try:
             data = json.loads(m.group(1))
         except Exception as e:
-            print(f"[Yad2] failed to parse __NEXT_DATA__: {e}")
+            print(f"[Yad2] JSON parse error: {e}")
             return []
 
         props = data.get("props", {}).get("pageProps", {})
-        print(f"[Yad2] pageProps keys: {list(props.keys())[:12]}")
 
-        # Try every known path Yad2 has used
-        candidates = [
-            ["feed"],                             # <-- direct list under "feed"
-            ["data", "feed", "feed_items"],
-            ["initialData", "feed", "feed_items"],
-            ["serverData", "feed", "feed_items"],
-            ["feedData", "feed_items"],
-            ["feed", "feed_items"],
-            ["listings"],
-            ["items"],
-        ]
-        for path in candidates:
+        # ── Strategy 1: React Query dehydratedState (current Yad2 structure) ──
+        queries = props.get("dehydratedState", {}).get("queries", [])
+        for q in queries:
+            items = (q.get("state", {})
+                      .get("data", {})
+                      .get("feed", {})
+                      .get("feed_items", []))
+            if items:
+                print(f"[Yad2] dehydratedState → {len(items)} raw items")
+                return items
+
+        # ── Strategy 2: direct feed key ──
+        feed = props.get("feed")
+        if isinstance(feed, dict):
+            items = feed.get("feed_items", [])
+            if items:
+                print(f"[Yad2] feed.feed_items → {len(items)} items")
+                return items
+        if isinstance(feed, list) and feed:
+            print(f"[Yad2] feed (list) → {len(feed)} items")
+            return feed
+
+        # ── Strategy 3: other known paths ──
+        for path in [["listings"], ["items"], ["data", "feed", "feed_items"]]:
             obj = props
             for key in path:
                 obj = obj.get(key) if isinstance(obj, dict) else None
             if isinstance(obj, list) and obj:
-                print(f"[Yad2] found {len(obj)} items at {' > '.join(path)}")
+                print(f"[Yad2] found at {path} → {len(obj)} items")
                 return obj
 
-        # Last resort: deep search for list of ad-type dicts
-        found = self._deep(props)
-        if found:
-            print(f"[Yad2] deep-search found {len(found)} items")
-        else:
-            print(f"[Yad2] no items found; top-level pageProps keys: {list(props.keys())}")
-        return found
-
-    def _deep(self, obj, depth=0) -> list[dict]:
-        if depth > 6:
-            return []
-        if isinstance(obj, list) and len(obj) > 2 and isinstance(obj[0], dict):
-            if "price" in obj[0] or "id" in obj[0]:
-                return obj
-        if isinstance(obj, dict):
-            for v in obj.values():
-                r = self._deep(v, depth + 1)
-                if r:
-                    return r
+        print(f"[Yad2] no items found; pageProps keys: {list(props.keys())}")
         return []
 
     def _parse(self, item: dict) -> Optional[Listing]:
         try:
-            addr  = item.get("address", {})
-            city  = addr.get("city",         {}).get("text", "") if isinstance(addr, dict) else ""
-            nbhd  = addr.get("neighborhood", {}).get("text", "") if isinstance(addr, dict) else ""
-            st    = addr.get("street",       {}).get("text", "") if isinstance(addr, dict) else ""
-            full  = ", ".join(x for x in [st, nbhd, city] if x)
+            item_id = str(item.get("id", ""))
 
+            # price is a plain number in the HTML page data
             price = None
-            raw   = str(item.get("price", "")).replace(",", "").replace("₪", "").strip()
-            if raw.isdigit():
-                price = int(raw)
+            pv = item.get("price")
+            if pv is not None:
+                try:
+                    price = int(str(pv).replace(",", "").replace("₪", "").strip())
+                except (ValueError, TypeError):
+                    pass
 
-            rooms = None
-            rv    = item.get("rooms")
-            if rv is not None:
-                try: rooms = float(str(rv).replace("חדרים","").replace("חדר","").strip())
-                except ValueError: pass
+            # row_4: [{value: rooms}, {value: floor}, {value: sqm}]
+            row4  = item.get("row_4") or []
+            rooms = floor = sqm = None
+            try: rooms = float(row4[0]["value"]) if len(row4) > 0 else None
+            except (KeyError, TypeError, ValueError, IndexError): pass
+            try:
+                fv = row4[1]["value"] if len(row4) > 1 else None
+                floor = int(fv) if fv is not None and str(fv).lstrip("-").isdigit() else None
+            except (KeyError, TypeError, ValueError, IndexError): pass
+            try: sqm = float(row4[2]["value"]) if len(row4) > 2 else None
+            except (KeyError, TypeError, ValueError, IndexError): pass
 
-            sqm  = None
-            sv   = item.get("square_meters")
-            if sv:
-                try: sqm = float(str(sv).replace('מ"ר', "").strip())
-                except ValueError: pass
+            # address fields
+            city         = item.get("city", "")
+            neighborhood = item.get("neighborhood", "")
+            street       = item.get("title_1", "")   # street address
+            full         = ", ".join(x for x in [street, neighborhood, city] if x)
 
-            floor = None
-            fv    = item.get("floor")
-            if fv is not None:
-                try: floor = int(fv)
-                except (ValueError, TypeError): pass
-
+            # image
             images    = item.get("images", [])
-            image_url = images[0].get("src") if images and isinstance(images[0], dict) else None
-            item_id   = str(item.get("id", ""))
+            image_url = None
+            if images and isinstance(images[0], dict):
+                image_url = images[0].get("src") or images[0].get("url")
 
             return Listing(
                 id=f"yad2_{item_id}", source="yad2",
-                title=item.get("title") or full,
+                title=street or full,
                 price=price, rooms=rooms, floor=floor, size_sqm=sqm,
-                city=city, neighborhood=nbhd, street=st, address=full,
-                description=item.get("info_text", ""),
+                city=city, neighborhood=neighborhood, street=street, address=full,
+                description=item.get("info_text", "") or "",
                 image_url=image_url,
-                url=f"{BASE}/item/{item_id}" if item_id else None,
-                contact_name=item.get("contact_name"),
+                url=f"{BASE}/item/{item_id}",
+                contact_name=None,
             )
         except Exception as e:
-            print(f"[Yad2] parse error: {e}")
+            print(f"[Yad2] parse error: {e} | item keys: {list(item.keys())[:8]}")
             return None
