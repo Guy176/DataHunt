@@ -79,25 +79,88 @@ class MadlanScraper(BaseScraper):
         return p
 
     def _extract(self, html: str):
-        """Returns (items, build_id)."""
+        """Returns (items, build_id). Tries multiple extraction strategies."""
+
+        # Strategy 1: classic __NEXT_DATA__ (Next.js 12 and below)
         m = re.search(
-            r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',
+            r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>\s*(\{.*?\})\s*</script>',
             html, re.DOTALL
         )
-        if not m:
-            print("[Madlan] __NEXT_DATA__ not found")
-            return [], None
+        if m:
+            try:
+                data     = json.loads(m.group(1))
+                build_id = data.get("buildId")
+                props    = data.get("props", {}).get("pageProps", {})
+                items, _ = self._extract_from_props(props)
+                if items:
+                    return items, build_id
+                print("[Madlan] __NEXT_DATA__ found but no listings inside")
+                return [], build_id
+            except Exception as e:
+                print(f"[Madlan] __NEXT_DATA__ parse error: {e}")
 
-        try:
-            data = json.loads(m.group(1))
-        except Exception as e:
-            print(f"[Madlan] JSON parse error: {e}")
-            return [], None
+        # Strategy 2: Next.js 13+ App Router — data pushed into
+        # self.__next_f or __NEXT_RSC__ script chunks
+        chunks = re.findall(r'self\.__next_f\.push\(\[.*?,\s*"(.*?)"\]\)', html)
+        for chunk in chunks:
+            try:
+                decoded = chunk.encode().decode("unicode_escape")
+                if '"listings"' in decoded or '"rentPrice"' in decoded or '"price"' in decoded:
+                    items = self._extract_from_rsc_chunk(decoded)
+                    if items:
+                        print(f"[Madlan] RSC chunk found {len(items)} items")
+                        return items, None
+            except Exception:
+                pass
 
-        build_id = data.get("buildId")
-        props    = data.get("props", {}).get("pageProps", {})
-        items, _ = self._extract_from_props(props)
-        return items, build_id
+        # Strategy 3: any inline <script> containing JSON with listing-like keys
+        scripts = re.findall(r'<script[^>]*type=["\']application/json["\'][^>]*>(.*?)</script>', html, re.DOTALL)
+        for raw in scripts:
+            try:
+                obj = json.loads(raw.strip())
+                items = self._deep(obj)
+                if items:
+                    print(f"[Madlan] found {len(items)} items in application/json script")
+                    return items, None
+            except Exception:
+                pass
+
+        # Strategy 4: window.__INITIAL_STATE__ or similar
+        for pat in [
+            r'window\.__INITIAL_STATE__\s*=\s*(\{.*?\})(?:;|\n)',
+            r'window\.__DATA__\s*=\s*(\{.*?\})(?:;|\n)',
+            r'"listings"\s*:\s*(\[.*?\])',
+        ]:
+            m2 = re.search(pat, html, re.DOTALL)
+            if m2:
+                try:
+                    obj   = json.loads(m2.group(1))
+                    items = obj if isinstance(obj, list) else self._deep(obj)
+                    if items:
+                        print(f"[Madlan] found {len(items)} items via window pattern")
+                        return items, None
+                except Exception:
+                    pass
+
+        print("[Madlan] no data found — dumping script tag count for debug")
+        script_count = html.count("<script")
+        print(f"[Madlan] page has {script_count} <script> tags, HTML length={len(html)}")
+        return [], None
+
+    def _extract_from_rsc_chunk(self, text: str) -> list[dict]:
+        """Parse Next.js RSC (React Server Component) payload chunk."""
+        # RSC chunks are line-delimited JSON rows like: 0:["$","div",...]
+        items = []
+        for line in text.splitlines():
+            try:
+                colon = line.index(":")
+                payload = json.loads(line[colon + 1:])
+                found = self._deep(payload)
+                if found:
+                    items.extend(found)
+            except Exception:
+                pass
+        return items
 
     def _extract_from_props(self, props: dict):
         print(f"[Madlan] pageProps keys: {list(props.keys())[:15]}")

@@ -43,11 +43,14 @@ class Yad2Scraper(BaseScraper):
                     if not items:
                         break
 
+                    if items:
+                        print(f"[Yad2] first item keys: {list(items[0].keys())[:10]}")
                     for item in items:
-                        if isinstance(item, dict) and item.get("type") == "ad":
-                            lst = self._parse(item)
-                            if lst:
-                                results.append(lst)
+                        if not isinstance(item, dict):
+                            continue
+                        lst = self._parse(item)
+                        if lst:
+                            results.append(lst)
 
                     await asyncio.sleep(1.0)
 
@@ -93,6 +96,7 @@ class Yad2Scraper(BaseScraper):
 
         # Try every known path Yad2 has used
         candidates = [
+            ["feed"],                             # <-- direct list under "feed"
             ["data", "feed", "feed_items"],
             ["initialData", "feed", "feed_items"],
             ["serverData", "feed", "feed_items"],
