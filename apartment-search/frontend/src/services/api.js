@@ -8,7 +8,7 @@ const api = axios.create({ baseURL: BASE, timeout: 30000 });
 
 export async function fetchListings(filters = {}) {
   const { data } = await api.get("/listings/", { params: cleanParams(filters) });
-  return data;
+  return Array.isArray(data) ? data : [];
 }
 
 export async function countListings(params = {}) {

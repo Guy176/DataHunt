@@ -51,7 +51,7 @@ async def _run_scrape(filters: SearchFilters, job_id: str) -> None:
 async def start_scrape(filters: SearchFilters, background_tasks: BackgroundTasks):
     import uuid
     job_id = uuid.uuid4().hex[:8]
-    _scrape_status[job_id] = "queued"
+    _scrape_status[job_id] = {"status": "queued", "total": 0, "errors": {}}
     background_tasks.add_task(_run_scrape, filters, job_id)
     return {"job_id": job_id, "status": "queued"}
 
