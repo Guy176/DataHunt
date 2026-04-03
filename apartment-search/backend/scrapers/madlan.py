@@ -1,17 +1,17 @@
 """
 Madlan scraper — fetches their Next.js search page and extracts
 the __NEXT_DATA__ JSON blob that contains all listing data.
+Uses curl_cffi to impersonate Chrome and bypass bot detection.
 """
 
 import asyncio
 import json
 import re
-import httpx
 from typing import Optional
+from curl_cffi.requests import AsyncSession
 from .base import BaseScraper, Listing
 
 MADLAN_CITY_SLUGS: dict[str, str] = {
-    # Hebrew -> URL slug
     "תל אביב": "tel-aviv-yafo",
     "ירושלים": "jerusalem",
     "חיפה": "haifa",
@@ -61,49 +61,40 @@ MADLAN_BASE = "https://www.madlan.co.il"
 class MadlanScraper(BaseScraper):
     WARM_URL = "https://www.madlan.co.il"
 
-    HEADERS = {
-        "User-Agent": (
-            "Mozilla/5.0 (Linux; Android 13; Pixel 7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Mobile Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "he-IL,he;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-    }
-
     async def scrape(self, filters: dict) -> list[Listing]:
-        city = (filters.get("city") or "").strip().lower()
-        slug = MADLAN_CITY_SLUGS.get(filters.get("city", "")) or MADLAN_CITY_SLUGS.get(city) or "israel"
+        city = (filters.get("city") or "").strip()
+        slug = (
+            MADLAN_CITY_SLUGS.get(city)
+            or MADLAN_CITY_SLUGS.get(city.lower())
+            or "israel"
+        )
 
         url = f"{MADLAN_BASE}/for-rent/{slug}"
         params = self._build_params(filters)
-
         results: list[Listing] = []
 
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True, headers=self.HEADERS) as client:
-            # Warm up: visit the main page to get session cookies
+        async with AsyncSession(impersonate="chrome124") as client:
+            # Warm up: visit main site to get session cookies
             try:
-                await client.get(self.WARM_URL)
-                await asyncio.sleep(1.2)
+                r = await client.get(self.WARM_URL)
+                print(f"[Madlan] Warm-up: HTTP {r.status_code}")
+                await asyncio.sleep(1.5)
             except Exception as e:
-                print(f"[Madlan] Warm-up failed (continuing anyway): {e}")
+                print(f"[Madlan] Warm-up failed (continuing): {e}")
 
             for page in range(1, 4):
                 try:
                     page_params = {**params, "page": page}
                     resp = await client.get(url, params=page_params)
-                    if resp.status_code == 403:
-                        print(f"[Madlan] 403 on page {page} — session rejected")
-                        break
+                    print(f"[Madlan] Page {page}: HTTP {resp.status_code}")
+
                     if resp.status_code != 200:
-                        print(f"[Madlan] HTTP {resp.status_code}")
+                        print(f"[Madlan] Body preview: {resp.text[:300]}")
                         break
 
                     items = self._extract_listings(resp.text)
                     if not items:
+                        print(f"[Madlan] No __NEXT_DATA__ listings on page {page}")
                         break
 
                     for raw in items:
@@ -113,16 +104,13 @@ class MadlanScraper(BaseScraper):
 
                     await asyncio.sleep(1.0)
 
-                except httpx.RequestError as e:
-                    print(f"[Madlan] Request error: {e}")
-                    break
                 except Exception as e:
                     print(f"[Madlan] Error: {e}")
                     break
 
+        print(f"[Madlan] Done — {len(results)} listings")
         return results
 
-    # ------------------------------------------------------------------
     def _build_params(self, filters: dict) -> dict:
         params: dict = {}
         if filters.get("min_price"):
@@ -140,7 +128,6 @@ class MadlanScraper(BaseScraper):
         return params
 
     def _extract_listings(self, html: str) -> list[dict]:
-        """Extract listings from Next.js __NEXT_DATA__ embedded JSON."""
         match = re.search(
             r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',
             html,
@@ -153,10 +140,8 @@ class MadlanScraper(BaseScraper):
         except json.JSONDecodeError:
             return []
 
-        # Traverse the Next.js props to find listings
         props = data.get("props", {}).get("pageProps", {})
 
-        # Try common keys Madlan uses
         for key in ("listings", "items", "feed", "results", "data"):
             val = props.get(key)
             if isinstance(val, list) and val:
@@ -167,7 +152,6 @@ class MadlanScraper(BaseScraper):
                     if isinstance(sub, list) and sub:
                         return sub
 
-        # Fallback: deep search for a list of objects with a 'price' key
         return self._deep_find_listings(props)
 
     def _deep_find_listings(self, obj, depth=0) -> list[dict]:
@@ -215,9 +199,7 @@ class MadlanScraper(BaseScraper):
             location = item.get("location") or item.get("address") or {}
             if isinstance(location, str):
                 address = location
-                city = ""
-                neighborhood = ""
-                street = ""
+                city = neighborhood = street = ""
             else:
                 city = location.get("city", "") or item.get("city", "")
                 neighborhood = location.get("neighborhood", "") or item.get("neighborhood", "")
@@ -250,7 +232,10 @@ class MadlanScraper(BaseScraper):
                 description=item.get("description") or item.get("details") or "",
                 image_url=image_url,
                 url=listing_url,
-                contact_name=item.get("contactName") or item.get("agent", {}).get("name") if isinstance(item.get("agent"), dict) else None,
+                contact_name=(
+                    item.get("contactName")
+                    or (item.get("agent", {}).get("name") if isinstance(item.get("agent"), dict) else None)
+                ),
             )
         except Exception as e:
             print(f"[Madlan] Parse error: {e}")

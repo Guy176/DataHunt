@@ -1,11 +1,11 @@
 """
-Yad2 scraper — uses Yad2's internal JSON feed API (publicly accessible,
-the same endpoint their website calls).
+Yad2 scraper — uses Yad2's internal JSON feed API.
+Uses curl_cffi to impersonate Chrome and bypass bot detection.
 """
 
 import asyncio
-import httpx
 from typing import Optional
+from curl_cffi.requests import AsyncSession
 from .base import BaseScraper, Listing
 
 # Yad2 city codes (city name -> numeric code used in their API)
@@ -74,61 +74,27 @@ class Yad2Scraper(BaseScraper):
     WARM_URL = "https://www.yad2.co.il/realestate/rent"
     MAX_PAGES = 3
 
-    # Full browser headers — Yad2 rejects requests without a valid session
-    BROWSER_HEADERS = {
-        "User-Agent": (
-            "Mozilla/5.0 (Linux; Android 14; SM-S928B) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Mobile Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-    }
-
-    API_HEADERS = {
-        "User-Agent": (
-            "Mozilla/5.0 (Linux; Android 14; SM-S928B) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Mobile Safari/537.36"
-        ),
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Referer": "https://www.yad2.co.il/",
-        "Origin": "https://www.yad2.co.il",
-        "Connection": "keep-alive",
-    }
-
     async def scrape(self, filters: dict) -> list[Listing]:
         params = self._build_params(filters)
         results: list[Listing] = []
 
-        async with httpx.AsyncClient(
-            timeout=30,
-            follow_redirects=True,
-            headers=self.BROWSER_HEADERS,
-        ) as client:
-            # Warm up: visit the main page to get session cookies
+        async with AsyncSession(impersonate="chrome124") as client:
+            # Warm up: visit main site so cookies/session are established
             try:
-                await client.get(self.WARM_URL)
-                await asyncio.sleep(1.2)
+                r = await client.get(self.WARM_URL)
+                print(f"[Yad2] Warm-up: HTTP {r.status_code}")
+                await asyncio.sleep(1.5)
             except Exception as e:
-                print(f"[Yad2] Warm-up failed (continuing anyway): {e}")
+                print(f"[Yad2] Warm-up failed (continuing): {e}")
 
             for page in range(1, self.MAX_PAGES + 1):
                 params["page"] = page
                 try:
-                    resp = await client.get(
-                        self.BASE_URL, params=params, headers=self.API_HEADERS
-                    )
-                    if resp.status_code == 403:
-                        print(f"[Yad2] 403 on page {page} — session rejected")
-                        break
+                    resp = await client.get(self.BASE_URL, params=params)
+                    print(f"[Yad2] Page {page}: HTTP {resp.status_code}")
+
                     if resp.status_code != 200:
-                        print(f"[Yad2] HTTP {resp.status_code} on page {page}")
+                        print(f"[Yad2] Body preview: {resp.text[:300]}")
                         break
 
                     data = resp.json()
@@ -136,6 +102,7 @@ class Yad2Scraper(BaseScraper):
                     items = feed.get("feed_items", [])
 
                     if not items:
+                        print(f"[Yad2] No items on page {page}")
                         break
 
                     for item in items:
@@ -150,23 +117,18 @@ class Yad2Scraper(BaseScraper):
 
                     await asyncio.sleep(0.8)
 
-                except httpx.RequestError as e:
-                    print(f"[Yad2] Request error: {e}")
-                    break
                 except Exception as e:
-                    print(f"[Yad2] Unexpected error: {e}")
+                    print(f"[Yad2] Error on page {page}: {e}")
                     break
 
         print(f"[Yad2] Done — {len(results)} listings")
         return results
 
-    # ------------------------------------------------------------------
     def _build_params(self, filters: dict) -> dict:
         params: dict = {
             "propertyGroup": "apartments",
             "pageSize": 40,
         }
-
         if filters.get("min_price"):
             params["minPrice"] = filters["min_price"]
         if filters.get("max_price"):
@@ -180,10 +142,9 @@ class Yad2Scraper(BaseScraper):
         if filters.get("max_floor"):
             params["maxFloor"] = filters["max_floor"]
 
-        city = (filters.get("city") or "").strip().lower()
+        city = (filters.get("city") or "").strip()
         if city:
-            # Try exact match, then lowercase
-            code = YAD2_CITIES.get(filters["city"]) or YAD2_CITIES.get(city)
+            code = YAD2_CITIES.get(city) or YAD2_CITIES.get(city.lower())
             if code:
                 params["city"] = code
 
@@ -222,7 +183,7 @@ class Yad2Scraper(BaseScraper):
             size_sqm: Optional[float] = None
             if sqm_raw:
                 try:
-                    size_sqm = float(str(sqm_raw).replace("מ\"ר", "").strip())
+                    size_sqm = float(str(sqm_raw).replace('מ"ר', "").strip())
                 except ValueError:
                     pass
 
