@@ -264,7 +264,7 @@
     <line x1="29" y1="26" x2="20" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/>
   </svg>
   <h1>Job Apply</h1>
-  <span style="font-size:10px;opacity:.6;margin-right:4px">v5</span>
+  <span style="font-size:10px;opacity:.6;margin-right:4px">v6</span>
   <span class="lang-chip en" id="langChip">EN</span>
 </header>
 
@@ -449,14 +449,16 @@ function extractTitle(text, l) {
   const lines = text.split(/\n+/).map(s => s.trim()).filter(s => s.length > 2);
 
   const heRe = [
-    /(?:משרה|תפקיד|פוזיציה)\s*[:\s–-]+\s*(.{3,70})/,
-    // matches דרוש, דרושה, דרוש/ה, דרושים, מחפש, מחפשת, מחפש/ת etc.
+    // "משרת X" (genitive) — "the position of X", most specific
+    /משרת\s+(.{3,70})/,
+    // "משרה: X" or "תפקיד: X" — requires colon or dash, NOT plain space
+    /(?:משרה|תפקיד|פוזיציה)\s*[:–-]\s*(.{3,70})/,
+    // "דרוש/ה X", "מחפש/ת X", "מגייסים X"
     /(?:דרוש|מחפש|מגייס)[^\s\n]{0,4}\s+(.{3,70})/,
     /(?:אנחנו|אנו)\s+(?:מגייסים|מחפשים)\s+(.{3,70})/,
-    /(?:הזדמנות|צוות)\s+ל[:\s]+(.{3,70})/,
   ];
   const enRe = [
-    /(?:position|role|job title|title)\s*[:\s–-]+\s*(.{3,70})/i,
+    /(?:position|role|job title|title)\s*[:–-]\s*(.{3,70})/i,
     /(?:we(?:'re| are)\s+(?:hiring|looking for)|hiring a?n?|looking for a?n?)\s+(.{3,70})/i,
     /(?:join us as|opening for)\s+(.{3,70})/i,
   ];
@@ -466,7 +468,12 @@ function extractTitle(text, l) {
   for (const line of lines) {
     for (const re of patterns) {
       const m = line.match(re);
-      if (m) return m[1].replace(/[|•·—–].*$/, '').replace(/\s*\|.*$/, '').trim().slice(0, 70);
+      if (m) {
+        const raw = m[1].replace(/[|•·—–].*$/, '').replace(/\s*\|.*$/, '').trim();
+        // Skip if result looks like a descriptor, not a job title
+        if (raw.length >= 3 && !/^(מלאה|חלקית|full.?time|part.?time)$/i.test(raw))
+          return raw.slice(0, 70);
+      }
     }
   }
 
@@ -475,7 +482,7 @@ function extractTitle(text, l) {
     if (
       !line.match(/^https?:\/\//i) &&
       !line.includes('@') &&
-      !line.match(/^\d{5,}$/) &&       // skip phone/ID numbers
+      !line.match(/^\d{5,}$/) &&
       line.length >= 5 && line.length <= 80
     ) return line;
   }
