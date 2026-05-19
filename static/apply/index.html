@@ -212,6 +212,9 @@
       transition: transform .28s;
       white-space: nowrap;
       pointer-events: none;
+      max-width: 90vw;
+      white-space: normal;
+      text-align: center;
     }
     .toast.show { transform: translateX(-50%) translateY(0); }
 
@@ -261,6 +264,7 @@
     <line x1="29" y1="26" x2="20" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/>
   </svg>
   <h1>Job Apply</h1>
+  <span style="font-size:10px;opacity:.6;margin-right:4px">v5</span>
   <span class="lang-chip en" id="langChip">EN</span>
 </header>
 
@@ -595,7 +599,9 @@ function applyParsed(text, knownEmail) {
   document.getElementById('titleIn').value = title;
   setLang(detected);
   refresh();
-  toast(email ? 'Done! Check the fields.' : 'Done — no email found, enter it manually.');
+  // Detailed feedback so we can debug what was found
+  const msg = `Lang: ${detected} | Email: ${email || 'none'} | Title: ${title || 'none'}`;
+  toast(msg, 5000);
 }
 
 function copyBody() {
@@ -621,12 +627,12 @@ function copyBody() {
 }
 
 let toastTimer;
-function toast(msg) {
+function toast(msg, ms = 2600) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -679,10 +685,12 @@ document.getElementById('btnInstall').addEventListener('click', () => {
 
 // ── Service worker ────────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () =>
+  window.addEventListener('load', () => {
     navigator.serviceWorker.register('/apply/sw.js', { scope: '/apply/' })
-      .catch(e => console.warn('SW:', e))
-  );
+      .catch(e => console.warn('SW:', e));
+    // Reload page when a new SW takes over so users always get fresh code
+    navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -1,4 +1,4 @@
-const CACHE = 'job-apply-v4';
+const CACHE = 'job-apply-v5';
 const SHELL = ['/apply', '/apply/manifest.json', '/apply/icon.svg'];
 
 self.addEventListener('install', e =>
