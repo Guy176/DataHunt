@@ -282,9 +282,12 @@
       <polyline points="6,12 28,30 50,12" stroke="#5f6368" stroke-width="3" fill="none" stroke-linejoin="round"/>
     </svg>
     <h2>Share a job post here</h2>
-    <p>Tap <strong>Share</strong> inside LinkedIn, Facebook, WhatsApp, or any website and choose <strong>Job Apply</strong> from the list.</p>
+    <p>Tap <strong>Share</strong> inside LinkedIn, WhatsApp, or any website and choose <strong>Job Apply</strong> from the list.</p>
     <div class="sep"></div>
-    <p>Or enter the details manually below.</p>
+    <p><strong>Facebook?</strong> Copy the post text, then tap below.</p>
+    <button class="btn btn-outline" style="margin-top:12px" onclick="pasteAndParse()">
+      &#x1F4CB; Paste &amp; Parse from Clipboard
+    </button>
   </div>
 
   <div class="card">
@@ -517,6 +520,30 @@ function openGmail() {
     + '&body=' + encodeURIComponent(body);
 
   window.open(url, '_blank');
+}
+
+async function pasteAndParse() {
+  let text = '';
+  try {
+    text = await navigator.clipboard.readText();
+  } catch (e) {
+    toast('Allow clipboard access and try again');
+    return;
+  }
+  if (!text.trim()) { toast('Clipboard is empty'); return; }
+
+  document.getElementById('emptyState').style.display = 'none';
+
+  const email    = extractEmail(text);
+  const detected = detectLang(text);
+  const title    = extractTitle(text, detected);
+
+  document.getElementById('emailIn').value = email;
+  document.getElementById('titleIn').value = title;
+  setLang(detected);
+  refresh();
+
+  toast(email ? 'Parsed! Check the fields.' : 'Parsed — no email found, enter it manually.');
 }
 
 function copyBody() {
