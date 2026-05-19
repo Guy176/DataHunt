@@ -381,9 +381,23 @@ def api_parse_url():
         "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
+    is_facebook = "facebook.com" in url
+
     try:
         resp = requests.get(fetch_url, headers=headers, timeout=12, allow_redirects=True)
         soup = BeautifulSoup(resp.content, "html.parser")
+
+        # Detect Facebook login wall
+        if is_facebook:
+            final_url = resp.url
+            og_title_tag = soup.find("meta", property="og:title")
+            og_title_val = (og_title_tag.get("content", "") if og_title_tag else "").lower()
+            if (
+                "login" in final_url or "checkpoint" in final_url
+                or "log in" in og_title_val or "sign up" in og_title_val
+                or og_title_val in ("facebook", "")
+            ):
+                return jsonify({"error": "facebook_login"}), 403
 
         # Collect text candidates (og tags first — most reliable on social sites)
         parts = []

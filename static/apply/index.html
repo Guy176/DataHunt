@@ -545,11 +545,38 @@ async function parseFromUrl(url) {
   try {
     const resp = await fetch('/api/parse-url?url=' + encodeURIComponent(url));
     const data = await resp.json();
-    if (data.error) { toast('Could not fetch page'); return; }
+    if (data.error === 'facebook_login') {
+      showFacebookHelp();
+      return;
+    }
+    if (data.error) { toast('Could not fetch — try copying the post text instead'); return; }
     applyParsed(data.text || '', data.email || '');
   } catch (e) {
     toast('Network error — try copying the post text instead');
   }
+}
+
+function showFacebookHelp() {
+  const el = document.getElementById('emptyState');
+  el.style.display = '';
+  el.innerHTML = `
+    <svg width="48" height="48" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="22" stroke="#ea4335" stroke-width="3" fill="none"/>
+      <line x1="24" y1="13" x2="24" y2="27" stroke="#ea4335" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="24" cy="34" r="2" fill="#ea4335"/>
+    </svg>
+    <h2 style="margin-top:10px">Facebook blocked access</h2>
+    <p>Facebook won't let apps fetch posts. Copy the post text directly instead:</p>
+    <div class="sep"></div>
+    <p style="text-align:left;line-height:1.8">
+      1. Go back to Facebook<br>
+      2. <strong>Long-press</strong> the post text<br>
+      3. Tap <strong>Select All</strong> then <strong>Copy</strong><br>
+      4. Come back here and tap the button below
+    </p>
+    <button class="btn btn-outline" style="margin-top:14px" onclick="pasteAndParse()">
+      &#x1F4CB; Paste Text
+    </button>`;
 }
 
 function applyParsed(text, knownEmail) {
