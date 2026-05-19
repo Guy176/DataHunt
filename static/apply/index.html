@@ -444,13 +444,16 @@ function extractTitle(text, l) {
   const lines = text.split(/\n+/).map(s => s.trim()).filter(s => s.length > 2);
 
   const heRe = [
-    /(?:משרה|תפקיד|פוזיציה)[:\s–-]+(.{3,70})/,
-    /(?:מחפש(?:ים)?|דרוש(?:ים)?|דרוש(?:ה)?)[:\s]+(.{3,70})/i,
+    /(?:משרה|תפקיד|פוזיציה)\s*[:\s–-]+\s*(.{3,70})/,
+    // matches דרוש, דרושה, דרוש/ה, דרושים, מחפש, מחפשת, מחפש/ת etc.
+    /(?:דרוש|מחפש|מגייס)[^\s\n]{0,4}\s+(.{3,70})/,
+    /(?:אנחנו|אנו)\s+(?:מגייסים|מחפשים)\s+(.{3,70})/,
+    /(?:הזדמנות|צוות)\s+ל[:\s]+(.{3,70})/,
   ];
   const enRe = [
-    /(?:position|role|job title|title)[:\s–-]+(.{3,70})/i,
-    /(?:we(?:'re| are) (?:hiring|looking for)|hiring a|looking for a?)[:\s]*(.{3,70})/i,
-    /(?:opening|vacancy)[:\s]+(.{3,70})/i,
+    /(?:position|role|job title|title)\s*[:\s–-]+\s*(.{3,70})/i,
+    /(?:we(?:'re| are)\s+(?:hiring|looking for)|hiring a?n?|looking for a?n?)\s+(.{3,70})/i,
+    /(?:join us as|opening for)\s+(.{3,70})/i,
   ];
 
   const patterns = l === 'he' ? [...heRe, ...enRe] : [...enRe, ...heRe];
@@ -458,14 +461,18 @@ function extractTitle(text, l) {
   for (const line of lines) {
     for (const re of patterns) {
       const m = line.match(re);
-      if (m) return m[1].replace(/[|•·—–-].*$/, '').trim().slice(0, 70);
+      if (m) return m[1].replace(/[|•·—–].*$/, '').replace(/\s*\|.*$/, '').trim().slice(0, 70);
     }
   }
 
-  // Fallback: first short line that is not a URL or email
+  // Fallback: first short line that is not a URL, phone number, or email
   for (const line of lines) {
-    if (!line.match(/^https?:\/\//i) && !line.includes('@') && line.length >= 5 && line.length <= 80)
-      return line;
+    if (
+      !line.match(/^https?:\/\//i) &&
+      !line.includes('@') &&
+      !line.match(/^\d{5,}$/) &&       // skip phone/ID numbers
+      line.length >= 5 && line.length <= 80
+    ) return line;
   }
   return '';
 }
@@ -514,12 +521,14 @@ function openGmail() {
   const subject = buildSubject(title, lang);
   const body    = buildBody(title, lang);
 
-  const url = 'https://mail.google.com/mail/?view=cm'
-    + '&to='   + encodeURIComponent(email)
-    + '&su='   + encodeURIComponent(subject)
-    + '&body=' + encodeURIComponent(body);
-
-  window.open(url, '_blank');
+  // mailto: opens Gmail app directly on Android
+  const a = document.createElement('a');
+  a.href = 'mailto:' + encodeURIComponent(email)
+    + '?subject=' + encodeURIComponent(subject)
+    + '&body='    + encodeURIComponent(body);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 async function pasteAndParse() {
