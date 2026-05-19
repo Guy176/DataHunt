@@ -284,9 +284,9 @@
     <h2>Share a job post here</h2>
     <p>Tap <strong>Share</strong> inside LinkedIn, WhatsApp, or any website and choose <strong>Job Apply</strong> from the list.</p>
     <div class="sep"></div>
-    <p><strong>Facebook?</strong> Copy the post text, then tap below.</p>
+    <p><strong>Facebook?</strong> Copy the post link or text, then tap below.</p>
     <button class="btn btn-outline" style="margin-top:12px" onclick="pasteAndParse()">
-      &#x1F4CB; Paste &amp; Parse from Clipboard
+      &#x1F4CB; Paste Link or Text
     </button>
   </div>
 
@@ -523,27 +523,45 @@ function openGmail() {
 }
 
 async function pasteAndParse() {
-  let text = '';
+  let raw = '';
   try {
-    text = await navigator.clipboard.readText();
+    raw = await navigator.clipboard.readText();
   } catch (e) {
     toast('Allow clipboard access and try again');
     return;
   }
-  if (!text.trim()) { toast('Clipboard is empty'); return; }
+  raw = raw.trim();
+  if (!raw) { toast('Clipboard is empty'); return; }
 
+  if (/^https?:\/\//i.test(raw)) {
+    await parseFromUrl(raw);
+  } else {
+    applyParsed(raw, '');
+  }
+}
+
+async function parseFromUrl(url) {
+  toast('Fetching post…');
+  try {
+    const resp = await fetch('/api/parse-url?url=' + encodeURIComponent(url));
+    const data = await resp.json();
+    if (data.error) { toast('Could not fetch page'); return; }
+    applyParsed(data.text || '', data.email || '');
+  } catch (e) {
+    toast('Network error — try copying the post text instead');
+  }
+}
+
+function applyParsed(text, knownEmail) {
   document.getElementById('emptyState').style.display = 'none';
-
-  const email    = extractEmail(text);
+  const email    = knownEmail || extractEmail(text);
   const detected = detectLang(text);
   const title    = extractTitle(text, detected);
-
   document.getElementById('emailIn').value = email;
   document.getElementById('titleIn').value = title;
   setLang(detected);
   refresh();
-
-  toast(email ? 'Parsed! Check the fields.' : 'Parsed — no email found, enter it manually.');
+  toast(email ? 'Done! Check the fields.' : 'Done — no email found, enter it manually.');
 }
 
 function copyBody() {

@@ -357,6 +357,62 @@ def api_preview():
         })
 
 
+@app.route("/api/parse-url")
+def api_parse_url():
+    """Fetch any job post URL and extract email + job title for the Apply tool."""
+    url = request.args.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    if not _preview_ok:
+        return jsonify({"error": "Server missing requests/bs4"}), 500
+
+    # For Facebook, try the mobile subdomain which is simpler HTML
+    fetch_url = url
+    if "facebook.com" in url and not url.startswith("https://m."):
+        fetch_url = url.replace("https://www.facebook.com", "https://m.facebook.com") \
+                       .replace("https://facebook.com", "https://m.facebook.com")
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Linux; Android 13; Pixel 7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Mobile Safari/537.36"
+        ),
+        "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
+    }
+
+    try:
+        resp = requests.get(fetch_url, headers=headers, timeout=12, allow_redirects=True)
+        soup = BeautifulSoup(resp.content, "html.parser")
+
+        # Collect text candidates (og tags first — most reliable on social sites)
+        parts = []
+        for prop in ("og:title", "og:description", "twitter:title", "twitter:description"):
+            tag = soup.find("meta", property=prop) or soup.find("meta", attrs={"name": prop})
+            if tag and tag.get("content"):
+                parts.append(tag["content"])
+
+        # Strip noise tags then grab visible body text
+        for tag in soup(["script", "style", "noscript", "header", "footer", "nav"]):
+            tag.decompose()
+        body = soup.get_text("\n", strip=True)
+        parts.append(body)
+
+        full_text = "\n".join(parts)
+
+        # Extract email
+        email_match = re.search(r"[\w.+%'-]+@[\w-]+\.[\w.]{2,}", full_text)
+        email = email_match.group(0) if email_match else ""
+
+        return jsonify({
+            "text":  full_text[:4000],
+            "email": email,
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Skills gap ────────────────────────────────────────────────────────────────
 
 @app.route("/api/skills-gap")
