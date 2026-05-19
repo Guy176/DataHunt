@@ -170,6 +170,7 @@
     .btn:active { transform: scale(.97); }
     .btn-blue { background: var(--blue); color: #fff; }
     .btn-blue:hover { background: var(--blue-dk); }
+    a.btn { text-decoration: none; display: flex; }
     .btn-outline {
       background: var(--surface);
       color: var(--blue);
@@ -521,10 +522,11 @@ function prepGmail(el) {
   const subject = buildSubject(title, lang);
   const body    = buildBody(title, lang);
 
-  el.href = 'mailto:' + encodeURIComponent(email)
+  // email must NOT be encoded — encodeURIComponent turns @ into %40 which breaks mailto
+  el.href = 'mailto:' + email
     + '?subject=' + encodeURIComponent(subject)
     + '&body='    + encodeURIComponent(body);
-  return true; // let the tap navigate naturally — Android opens Gmail
+  return true;
 }
 
 async function pasteAndParse() {
