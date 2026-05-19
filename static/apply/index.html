@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a73e8">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Job Apply">
+  <link rel="manifest" href="/apply/manifest.json">
+  <title>Job Apply</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue: #1a73e8;
+      --blue-dk: #1557b0;
+      --bg: #f1f3f4;
+      --surface: #fff;
+      --text: #202124;
+      --muted: #5f6368;
+      --border: #dadce0;
+      --green: #188038;
+      --red: #c5221f;
+      --r: 12px;
+      --sh: 0 1px 6px rgba(0,0,0,.13);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100svh;
+    }
+
+    /* ── Header ── */
+    .hdr {
+      background: var(--blue);
+      color: #fff;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    }
+    .hdr h1 { font-size: 19px; font-weight: 500; flex: 1; }
+    .hdr-icon { width: 30px; height: 30px; flex-shrink: 0; }
+    .lang-chip {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 20px;
+      letter-spacing: .4px;
+    }
+    .lang-chip.he { background: #fff; color: var(--blue); }
+    .lang-chip.en { background: rgba(255,255,255,.25); color: #fff; border: 1px solid rgba(255,255,255,.5); }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 58px;
+      z-index: 19;
+    }
+    .tab {
+      flex: 1;
+      padding: 13px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--muted);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .tab.on { color: var(--blue); border-bottom-color: var(--blue); }
+
+    /* ── Pages ── */
+    .page { display: none; padding: 16px; }
+    .page.on { display: block; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border-radius: var(--r);
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: var(--sh);
+    }
+    .card-label {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      margin-bottom: 14px;
+    }
+
+    /* ── Fields ── */
+    .field { margin-bottom: 14px; }
+    .field:last-child { margin-bottom: 0; }
+    label { display: block; font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
+    input[type=text], input[type=email], textarea {
+      width: 100%;
+      padding: 11px 13px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 15px;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg);
+      outline: none;
+      transition: border-color .2s, background .2s;
+    }
+    input:focus, textarea:focus { border-color: var(--blue); background: #fff; }
+    textarea { min-height: 130px; resize: vertical; line-height: 1.55; }
+
+    /* ── Language toggle ── */
+    .lang-row { display: flex; gap: 8px; }
+    .lbtn {
+      flex: 1;
+      padding: 10px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      background: var(--bg);
+      color: var(--muted);
+      transition: all .2s;
+    }
+    .lbtn.on { border-color: var(--blue); background: #e8f0fe; color: var(--blue); }
+
+    /* ── Preview ── */
+    .preview {
+      background: #f0f4ff;
+      border: 1px solid #c5d3f0;
+      border-radius: 8px;
+      padding: 13px;
+      font-size: 13.5px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      max-height: 170px;
+      overflow-y: auto;
+      color: var(--text);
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      transition: all .15s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-blue { background: var(--blue); color: #fff; }
+    .btn-blue:hover { background: var(--blue-dk); }
+    .btn-outline {
+      background: var(--surface);
+      color: var(--blue);
+      border: 1.5px solid var(--border);
+      margin-top: 10px;
+      font-size: 14px;
+      padding: 11px;
+    }
+    .btn-green { background: var(--green); color: #fff; }
+
+    /* ── Hint / status ── */
+    .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .hint.ok { color: var(--green); }
+    .hint.err { color: var(--red); }
+
+    /* ── Empty state ── */
+    .empty {
+      text-align: center;
+      padding: 28px 16px 20px;
+      color: var(--muted);
+    }
+    .empty svg { opacity: .35; margin-bottom: 14px; }
+    .empty h2 { font-size: 17px; color: var(--text); margin-bottom: 7px; }
+    .empty p { font-size: 13.5px; line-height: 1.55; }
+    .empty .sep { height: 1px; background: var(--border); margin: 16px 0; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #323232;
+      color: #fff;
+      padding: 11px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 99;
+      transition: transform .28s;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    code {
+      background: #eee;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    /* ── Install banner ── */
+    #installBanner {
+      display: none;
+      margin-bottom: 14px;
+      background: #e8f0fe;
+      border: 1px solid #c5d3f0;
+      border-radius: var(--r);
+      padding: 14px 18px;
+      font-size: 13.5px;
+      color: var(--blue-dk);
+      gap: 12px;
+      align-items: center;
+    }
+    #installBanner.show { display: flex; }
+    #installBanner p { flex: 1; line-height: 1.45; }
+    #installBanner strong { display: block; margin-bottom: 3px; }
+    #btnInstall {
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+<header class="hdr">
+  <svg class="hdr-icon" viewBox="0 0 30 30" fill="none">
+    <rect x="1" y="5" width="28" height="21" rx="3" stroke="white" stroke-width="2"/>
+    <polyline points="1,5 15,17 29,5" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+    <line x1="1" y1="26" x2="10" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <line x1="29" y1="26" x2="20" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+  <h1>Job Apply</h1>
+  <span class="lang-chip en" id="langChip">EN</span>
+</header>
+
+<div class="tabs">
+  <button class="tab on" id="tabApply" onclick="switchTab('apply', this)">Apply</button>
+  <button class="tab" id="tabTemplates" onclick="switchTab('templates', this)">Templates</button>
+</div>
+
+<!-- ── APPLY TAB ── -->
+<div class="page on" id="pg-apply">
+
+  <div id="installBanner">
+    <p><strong>Add to home screen</strong>Then share any job post directly to this app from LinkedIn, Facebook, WhatsApp &amp; more.</p>
+    <button id="btnInstall">Install</button>
+  </div>
+
+  <div id="emptyState" class="card empty">
+    <svg width="56" height="56" viewBox="0 0 56 56">
+      <rect x="6" y="12" width="44" height="34" rx="4" stroke="#5f6368" stroke-width="3" fill="none"/>
+      <polyline points="6,12 28,30 50,12" stroke="#5f6368" stroke-width="3" fill="none" stroke-linejoin="round"/>
+    </svg>
+    <h2>Share a job post here</h2>
+    <p>Tap <strong>Share</strong> inside LinkedIn, Facebook, WhatsApp, or any website and choose <strong>Job Apply</strong> from the list.</p>
+    <div class="sep"></div>
+    <p>Or enter the details manually below.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Job Details</div>
+
+    <div class="field">
+      <label for="emailIn">Contact Email</label>
+      <input type="email" id="emailIn" placeholder="hr@company.com" inputmode="email" autocomplete="off" oninput="refresh()">
+      <div class="hint" id="emailHint"></div>
+    </div>
+
+    <div class="field">
+      <label for="titleIn">Job Title</label>
+      <input type="text" id="titleIn" placeholder="Data Analyst / מנתח נתונים" autocomplete="off" oninput="refresh()">
+    </div>
+
+    <div class="field">
+      <label>Email Language</label>
+      <div class="lang-row">
+        <button class="lbtn on" id="btnEn" onclick="setLang('en')">&#x1F1FA;&#x1F1F8; English</button>
+        <button class="lbtn" id="btnHe" onclick="setLang('he')">&#x1F1EE;&#x1F1F1; &#x05E2;&#x05D1;&#x05E8;&#x05D9;&#x05EA;</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Preview</div>
+    <div class="preview" id="previewBox" dir="ltr">Fill in the details above to see a preview.</div>
+  </div>
+
+  <button class="btn btn-blue" onclick="openGmail()">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+      <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/>
+    </svg>
+    Open in Gmail
+  </button>
+
+  <button class="btn btn-outline" onclick="copyBody()">Copy Email Body</button>
+</div>
+
+<!-- ── TEMPLATES TAB ── -->
+<div class="page" id="pg-templates">
+
+  <div class="card">
+    <div class="card-label">English Template</div>
+    <div class="field">
+      <label for="tmplEn">Opening text &mdash; use <code>{JOB_TITLE}</code> as a placeholder</label>
+      <textarea id="tmplEn" dir="ltr"></textarea>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">&#x05EA;&#x05D1;&#x05E0;&#x05D9;&#x05EA; &#x05E2;&#x05D1;&#x05E8;&#x05D9;&#x05EA;</div>
+    <div class="field">
+      <label for="tmplHe" dir="rtl">&#x05E4;&#x05EA;&#x05D9;&#x05D7;&#x05D4; &mdash; &#x05D4;&#x05E9;&#x05EA;&#x05DE;&#x05E9; &#x05D1;-<code>{JOB_TITLE}</code> &#x05DB;&#x05DE;&#x05E7;&#x05D5;&#x05DD; &#x05E9;&#x05DE;&#x05D5;&#x05E8;</label>
+      <textarea id="tmplHe" dir="rtl"></textarea>
+    </div>
+  </div>
+
+  <button class="btn btn-blue" onclick="saveTemplates()">Save Templates</button>
+  <button class="btn btn-outline" onclick="resetTemplates()">Reset to Defaults</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Defaults (edit in Templates tab; stored in localStorage) ──────────────────
+const DEFAULTS = {
+  en: `Dear Hiring Manager,
+
+I am writing to express my strong interest in the {JOB_TITLE} position.
+
+[ YOUR OPENING HERE — edit this in the Templates tab ]
+
+I would love the opportunity to discuss how my background aligns with your needs.
+
+Best regards,
+[ YOUR NAME ]`,
+
+  he: `שלום רב,
+
+אני פונה/ת בקשר למשרת {JOB_TITLE}.
+
+[ הוסף/י כאן את פתיח המועמדות שלך — ערוך/י בלשונית Templates ]
+
+אשמח לשמוע מכם ולדון כיצד הרקע שלי מתאים לדרישות המשרה.
+
+בכבוד רב,
+[ השם שלך ]`
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let lang = 'en';
+let deferredInstall = null;
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  document.getElementById('pg-' + id).classList.add('on');
+  btn.classList.add('on');
+}
+
+// ── Language ──────────────────────────────────────────────────────────────────
+function setLang(l) {
+  lang = l;
+  document.getElementById('btnEn').classList.toggle('on', l === 'en');
+  document.getElementById('btnHe').classList.toggle('on', l === 'he');
+  const chip = document.getElementById('langChip');
+  chip.textContent = l.toUpperCase();
+  chip.className = 'lang-chip ' + l;
+  refresh();
+}
+
+// ── Templates ─────────────────────────────────────────────────────────────────
+function getTemplates() {
+  return {
+    en: localStorage.getItem('tmpl_en') || DEFAULTS.en,
+    he: localStorage.getItem('tmpl_he') || DEFAULTS.he,
+  };
+}
+
+function saveTemplates() {
+  localStorage.setItem('tmpl_en', document.getElementById('tmplEn').value);
+  localStorage.setItem('tmpl_he', document.getElementById('tmplHe').value);
+  toast('Templates saved!');
+  refresh();
+}
+
+function resetTemplates() {
+  if (!confirm('Reset both templates to defaults?')) return;
+  document.getElementById('tmplEn').value = DEFAULTS.en;
+  document.getElementById('tmplHe').value = DEFAULTS.he;
+  localStorage.removeItem('tmpl_en');
+  localStorage.removeItem('tmpl_he');
+  toast('Reset to defaults');
+}
+
+// ── Extraction helpers ────────────────────────────────────────────────────────
+function extractEmail(text) {
+  const m = text.match(/[\w.+%'-]+@[\w-]+\.[\w.]{2,}/);
+  return m ? m[0] : '';
+}
+
+function detectLang(text) {
+  const he = (text.match(/[֐-׿]/g) || []).length;
+  return he > 8 ? 'he' : 'en';
+}
+
+function extractTitle(text, l) {
+  const lines = text.split(/\n+/).map(s => s.trim()).filter(s => s.length > 2);
+
+  const heRe = [
+    /(?:משרה|תפקיד|פוזיציה)[:\s–-]+(.{3,70})/,
+    /(?:מחפש(?:ים)?|דרוש(?:ים)?|דרוש(?:ה)?)[:\s]+(.{3,70})/i,
+  ];
+  const enRe = [
+    /(?:position|role|job title|title)[:\s–-]+(.{3,70})/i,
+    /(?:we(?:'re| are) (?:hiring|looking for)|hiring a|looking for a?)[:\s]*(.{3,70})/i,
+    /(?:opening|vacancy)[:\s]+(.{3,70})/i,
+  ];
+
+  const patterns = l === 'he' ? [...heRe, ...enRe] : [...enRe, ...heRe];
+
+  for (const line of lines) {
+    for (const re of patterns) {
+      const m = line.match(re);
+      if (m) return m[1].replace(/[|•·—–-].*$/, '').trim().slice(0, 70);
+    }
+  }
+
+  // Fallback: first short line that is not a URL or email
+  for (const line of lines) {
+    if (!line.match(/^https?:\/\//i) && !line.includes('@') && line.length >= 5 && line.length <= 80)
+      return line;
+  }
+  return '';
+}
+
+// ── Build email ───────────────────────────────────────────────────────────────
+function buildSubject(title, l) {
+  if (!title) return l === 'he' ? 'מועמדות למשרה' : 'Job Application';
+  return l === 'he'
+    ? 'מועמדות למשרת ' + title
+    : 'Application – ' + title;
+}
+
+function buildBody(title, l) {
+  const placeholder = l === 'he' ? '[שם המשרה]' : '[Job Title]';
+  return getTemplates()[l].replace(/\{JOB_TITLE\}/g, title || placeholder);
+}
+
+// ── UI ────────────────────────────────────────────────────────────────────────
+function refresh() {
+  const email = document.getElementById('emailIn').value.trim();
+  const title = document.getElementById('titleIn').value.trim();
+
+  const hint = document.getElementById('emailHint');
+  if (email && /^[\w.+%'-]+@[\w-]+\.[\w.]{2,}$/.test(email)) {
+    hint.textContent = '✓ Valid email';
+    hint.className = 'hint ok';
+  } else if (email) {
+    hint.textContent = 'Invalid format';
+    hint.className = 'hint err';
+  } else {
+    hint.textContent = '';
+    hint.className = 'hint';
+  }
+
+  const body = buildBody(title, lang);
+  const box = document.getElementById('previewBox');
+  box.textContent = body;
+  box.dir = lang === 'he' ? 'rtl' : 'ltr';
+}
+
+function openGmail() {
+  const email = document.getElementById('emailIn').value.trim();
+  const title = document.getElementById('titleIn').value.trim();
+  if (!email) { toast('Enter the contact email first'); return; }
+
+  const subject = buildSubject(title, lang);
+  const body    = buildBody(title, lang);
+
+  const url = 'https://mail.google.com/mail/?view=cm'
+    + '&to='   + encodeURIComponent(email)
+    + '&su='   + encodeURIComponent(subject)
+    + '&body=' + encodeURIComponent(body);
+
+  window.open(url, '_blank');
+}
+
+function copyBody() {
+  const title = document.getElementById('titleIn').value.trim();
+  const body  = buildBody(title, lang);
+
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(body).then(() => toast('Body copied!')).catch(fallbackCopy);
+  } else {
+    fallbackCopy();
+  }
+
+  function fallbackCopy() {
+    const ta = document.createElement('textarea');
+    ta.value = body;
+    Object.assign(ta.style, { position: 'fixed', opacity: 0, top: 0, left: 0 });
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast('Body copied!');
+  }
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+function init() {
+  // Load templates into textareas
+  const t = getTemplates();
+  document.getElementById('tmplEn').value = t.en;
+  document.getElementById('tmplHe').value = t.he;
+
+  // Parse share-sheet query params
+  const p = new URLSearchParams(window.location.search);
+  const shTitle = p.get('title') || '';
+  const shText  = p.get('text')  || '';
+  const shUrl   = p.get('url')   || '';
+  const combined = [shTitle, shText, shUrl].join('\n');
+
+  if (shTitle || shText || shUrl) {
+    document.getElementById('emptyState').style.display = 'none';
+
+    const email    = extractEmail(combined);
+    const detected = detectLang(combined);
+    const title    = extractTitle(combined, detected);
+
+    document.getElementById('emailIn').value = email;
+    document.getElementById('titleIn').value = title;
+    setLang(detected);
+  } else {
+    setLang('en');
+  }
+
+  refresh();
+}
+
+// ── PWA install prompt ────────────────────────────────────────────────────────
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstall = e;
+  document.getElementById('installBanner').classList.add('show');
+});
+
+document.getElementById('btnInstall').addEventListener('click', () => {
+  if (deferredInstall) {
+    deferredInstall.prompt();
+    deferredInstall.userChoice.then(() => {
+      deferredInstall = null;
+      document.getElementById('installBanner').classList.remove('show');
+    });
+  }
+});
+
+// ── Service worker ────────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () =>
+    navigator.serviceWorker.register('/apply/sw.js', { scope: '/apply/' })
+      .catch(e => console.warn('SW:', e))
+  );
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

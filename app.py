@@ -4,7 +4,7 @@ DataHunt IL - Web Dashboard
 Run: python app.py   →   http://localhost:5000
 """
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 import json, subprocess, threading, os, sys, re
 from datetime import datetime, timedelta
 
@@ -24,6 +24,7 @@ CACHE_FILE     = os.path.join(DATA_DIR, "datahunt_cache.json")
 SCRAPER_FILE   = os.path.join(BASE_DIR, "datahunt_scraper.py")
 PROGRESS_FILE  = os.path.join(DATA_DIR, "scan_progress.json")
 CONFIG_FILE    = os.path.join(DATA_DIR, "user_config.json")
+APPLY_DIR      = os.path.join(BASE_DIR, "static", "apply")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 DEFAULT_ROLES = [
@@ -126,6 +127,17 @@ def load_cache():
 @app.route("/")
 def index():
     return DASHBOARD_HTML
+
+
+@app.route("/apply")
+@app.route("/apply/")
+def apply_tool():
+    return send_from_directory(APPLY_DIR, "index.html")
+
+
+@app.route("/apply/<path:filename>")
+def apply_static(filename):
+    return send_from_directory(APPLY_DIR, filename)
 
 
 @app.route("/api/jobs")

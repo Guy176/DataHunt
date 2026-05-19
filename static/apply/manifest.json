@@ -1,0 +1,28 @@
+{
+  "name": "Job Apply",
+  "short_name": "Apply",
+  "description": "Compose a job application email from any shared post",
+  "start_url": "/apply",
+  "scope": "/apply",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a73e8",
+  "theme_color": "#1a73e8",
+  "icons": [
+    {
+      "src": "/apply/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "share_target": {
+    "action": "/apply",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}
