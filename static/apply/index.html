@@ -318,12 +318,12 @@
     <div class="preview" id="previewBox" dir="ltr">Fill in the details above to see a preview.</div>
   </div>
 
-  <button class="btn btn-blue" onclick="openGmail()">
+  <a id="gmailLink" class="btn btn-blue" href="#" onclick="return prepGmail(this)">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
       <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/>
     </svg>
     Open in Gmail
-  </button>
+  </a>
 
   <button class="btn btn-outline" onclick="copyBody()">Copy Email Body</button>
 </div>
@@ -513,22 +513,18 @@ function refresh() {
   box.dir = lang === 'he' ? 'rtl' : 'ltr';
 }
 
-function openGmail() {
+function prepGmail(el) {
   const email = document.getElementById('emailIn').value.trim();
   const title = document.getElementById('titleIn').value.trim();
-  if (!email) { toast('Enter the contact email first'); return; }
+  if (!email) { toast('Enter the contact email first'); return false; }
 
   const subject = buildSubject(title, lang);
   const body    = buildBody(title, lang);
 
-  // mailto: opens Gmail app directly on Android
-  const a = document.createElement('a');
-  a.href = 'mailto:' + encodeURIComponent(email)
+  el.href = 'mailto:' + encodeURIComponent(email)
     + '?subject=' + encodeURIComponent(subject)
     + '&body='    + encodeURIComponent(body);
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  return true; // let the tap navigate naturally — Android opens Gmail
 }
 
 async function pasteAndParse() {
